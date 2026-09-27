@@ -39,9 +39,11 @@ class Machines:
         self._machines = machines
 
     def update(self, t: float, count: int, cx: float, cy: float,
-               regrouped: bool = False) -> list:
+               regrouped: bool = False, fingers: tuple = (),
+               pressed: bool = False) -> list:
         return [action for machine in self._machines
-                for action in machine.update(t, count, cx, cy, regrouped)]
+                for action in machine.update(
+                    t, count, cx, cy, regrouped, fingers, pressed)]
 
     def tick(self, t: float) -> list:
         return [action for machine in self._machines
@@ -108,7 +110,8 @@ def pump(events, read_state, tracker, machine, output, now: float) -> None:
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:
             output.emit(machine.update(
-                now, frame.count, frame.cx, frame.cy, frame.regrouped))
+                now, frame.count, frame.cx, frame.cy, frame.regrouped,
+                frame.fingers, frame.pressed))
 
 
 def run(device, tracker, machine, output, clock=time.monotonic) -> None:

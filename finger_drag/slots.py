@@ -29,6 +29,10 @@ class Frame:
     # True when a different set of fingers is being averaged than in the
     # previous frame, so the centroid is not comparable with the last one.
     regrouped: bool = field(default=False, compare=False)
+    # Each finger's position in millimetres, in slot order.
+    fingers: tuple = field(default=(), compare=False)
+    # The clickpad itself is being pressed down.
+    pressed: bool = field(default=False, compare=False)
 
 
 @dataclass
@@ -51,6 +55,7 @@ class SlotTracker:
         # Fingers that were already down cannot be seen: they have no touch
         # event left to send. Report nothing until the pad has been empty.
         self._waiting_for_lift = touching
+        self._pressed = False
         self.resyncing = False
 
     def begin_resync(self) -> None:
@@ -60,6 +65,7 @@ class SlotTracker:
 
     def reset(self, current_slot: int, touching: bool = False) -> None:
         self._slots.clear()
+        self._pressed = False
         self._current = current_slot
         self._waiting_for_lift = touching
         self.resyncing = False
@@ -69,6 +75,9 @@ class SlotTracker:
             return self._frame()
         if etype == e.EV_KEY and code == e.BTN_TOUCH and value == 0:
             self._pad_is_empty()
+            return None
+        if etype == e.EV_KEY and code == e.BTN_LEFT:
+            self._pressed = bool(value)
             return None
         if etype != e.EV_ABS:
             return None
@@ -105,11 +114,16 @@ class SlotTracker:
         regrouped = identity != self._identity
         self._identity = identity
         if not fingers:
-            return Frame(0, 0.0, 0.0, regrouped)
-        count = len(fingers)
+            return Frame(0, 0.0, 0.0, regrouped, (), self._pressed)
+        positions = tuple(
+            (s.x / self._x_units_per_mm, s.y / self._y_units_per_mm)
+            for _, s in sorted(fingers.items()))
+        count = len(positions)
         return Frame(
             count,
-            sum(s.x for s in fingers.values()) / count / self._x_units_per_mm,
-            sum(s.y for s in fingers.values()) / count / self._y_units_per_mm,
+            sum(x for x, _ in positions) / count,
+            sum(y for _, y in positions) / count,
             regrouped,
+            positions,
+            self._pressed,
         )
