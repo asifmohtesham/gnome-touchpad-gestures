@@ -47,7 +47,7 @@ main_as() {
         sudo setfacl -x "u:$USER" "$node"
     done
 
-    echo "finger-drag removed. The repository at ~/finger-drag was left in place."
+    echo "finger-drag removed. The repository itself was left in place."
 }
 
 main() {

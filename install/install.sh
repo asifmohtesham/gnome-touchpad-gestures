@@ -48,9 +48,22 @@ refuse_root() {
     fi
 }
 
+# Prints the unit with the repository's location filled in.
+render_unit() {
+    python3 - "$here/$unit" "$1" <<'PYTHON'
+import sys
+
+template, location = sys.argv[1], sys.argv[2]
+# systemd reads a single % as the start of a specifier.
+location = location.replace("%", "%%")
+sys.stdout.write(open(template).read().replace("@REPO@", location))
+PYTHON
+}
+
 install_service() {
     mkdir -p "$unit_dir"
-    install -m 0644 "$here/$unit" "$unit_dir/$unit"
+    render_unit "$repo" > "$unit_dir/$unit"
+    chmod 0644 "$unit_dir/$unit"
     systemctl --user daemon-reload
     systemctl --user enable "$unit"
     systemctl --user restart "$unit"
@@ -58,10 +71,6 @@ install_service() {
 
 main_as() {
     refuse_root "$1"
-    if [ "$repo" != "$HOME/finger-drag" ]; then
-        echo "finger-drag must live at $HOME/finger-drag (found $repo)." >&2
-        exit 1
-    fi
     # Checked before anything is changed on the system.
     local missing
     missing="$(missing_packages evdev dbus | tr '\n' ' ')"
@@ -100,6 +109,9 @@ main_as() {
 
     sleep 1
     systemctl --user --no-pager --lines=5 status "$unit"
+    echo
+    echo "The service runs the code in $repo."
+    echo "If you move that directory, run this script again from its new place."
 }
 
 main() {

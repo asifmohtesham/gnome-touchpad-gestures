@@ -95,6 +95,77 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(result.stderr, "")
 
 
+REPO = INSTALL.parent
+
+
+class LocationTest(unittest.TestCase):
+    """The repository may live anywhere; the service is told where."""
+
+    def working_directory(self, unit):
+        lines = [line for line in unit.splitlines()
+                 if line.startswith("WorkingDirectory=")]
+        self.assertEqual(len(lines), 1, unit)
+        return lines[0].split("=", 1)[1]
+
+    def test_unit_is_rendered_with_the_given_location(self):
+        result = call("install.sh", "render_unit", "/srv/code/gestures")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.working_directory(result.stdout), "/srv/code/gestures")
+        self.assertNotIn("@REPO@", result.stdout)
+
+    def test_rest_of_the_unit_is_untouched(self):
+        result = call("install.sh", "render_unit", "/srv/code/gestures")
+        template = (INSTALL / "finger-drag.service").read_text()
+        self.assertEqual(
+            result.stdout,
+            template.replace("@REPO@", "/srv/code/gestures"))
+
+    def test_awkward_characters_in_the_location_survive(self):
+        where = "/home/some one/R&D/100% mine/a|b"
+        result = call("install.sh", "render_unit", where)
+        # systemd reads a single % as the start of a specifier.
+        self.assertEqual(self.working_directory(result.stdout),
+                         where.replace("%", "%%"))
+
+    def test_installing_the_service_records_where_the_code_is(self):
+        with tempfile.TemporaryDirectory(prefix="finger-drag-test-") as home:
+            stubs = pathlib.Path(home) / "bin"
+            stubs.mkdir()
+            log = pathlib.Path(home) / "log"
+            for name in ("sudo", "systemctl"):
+                stub = stubs / name
+                stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n')
+                stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+            environment = dict(
+                os.environ, HOME=home,
+                PATH=f"{stubs}{os.pathsep}{os.environ['PATH']}")
+            result = subprocess.run(
+                ["bash", "-c", 'source "$1"; install_service', "bash",
+                 str(INSTALL / "install.sh")],
+                capture_output=True, text=True, timeout=30, env=environment)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            installed = pathlib.Path(
+                home, ".config/systemd/user/finger-drag.service").read_text()
+            commands = log.read_text().splitlines()
+
+        self.assertEqual(self.working_directory(installed), str(REPO))
+        self.assertEqual(commands, [
+            "systemctl --user daemon-reload",
+            "systemctl --user enable finger-drag.service",
+            "systemctl --user restart finger-drag.service",
+        ])
+
+    def test_installer_does_not_insist_on_one_location(self):
+        script = (INSTALL / "install.sh").read_text()
+        self.assertNotIn("must live at", script)
+        self.assertNotIn("$HOME/finger-drag", script)
+
+    def test_template_names_no_location_of_its_own(self):
+        template = (INSTALL / "finger-drag.service").read_text()
+        self.assertIn("WorkingDirectory=@REPO@", template)
+        self.assertNotIn("%h", template)
+
+
 class InstalledFilesTest(unittest.TestCase):
     def test_rule_matches_any_touchpad_so_nobody_has_to_edit_it(self):
         rule = (INSTALL / "71-finger-drag.rules").read_text()

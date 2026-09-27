@@ -48,18 +48,24 @@ it has only ever run on the hardware below. Expect to tune it for yours.
 
 ## Install
 
-Clone into `~/finger-drag`. The service runs the code from there, so the
-location matters.
+Clone it wherever you keep code, then run the installer from there:
 
 ```bash
-git clone https://github.com/asifmohtesham/gnome-x11-touchpad-gestures.git ~/finger-drag
+git clone https://github.com/asifmohtesham/gnome-x11-touchpad-gestures.git
+cd gnome-x11-touchpad-gestures
+./install/install.sh
 ```
 
-Then install:
+The service runs the code straight from that directory, and the installer
+records where it is. Two things follow:
 
-```bash
-~/finger-drag/install/install.sh
-```
+- **If you move or rename the directory, run `./install/install.sh` again
+  from its new place.** Until you do, the service points at the old location
+  and will not start.
+- **Whatever is checked out there is what runs.** Switching branch or pulling
+  changes what the service does the next time it starts.
+
+The commands below are all run from the repository directory.
 
 Run it as your normal user, not from a root shell and not with `sudo`. It
 installs a service for your own desktop session, and root has no session to
@@ -75,7 +81,8 @@ If it says a re-login is needed, log out and in, then run it again.
   devices, without joining the `input` group, which would expose the
   keyboard too.
 - **One user service**, `~/.config/systemd/user/finger-drag.service`. It
-  starts with your graphical session, and only if that session is X11.
+  starts with your graphical session, and only if that session is X11. It
+  holds the path of the directory you installed from.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
@@ -87,7 +94,7 @@ finds.
 ## Uninstall
 
 ```bash
-~/finger-drag/install/uninstall.sh
+./install/uninstall.sh
 ```
 
 This stops and removes the service, removes the udev rule, makes udev look
@@ -136,7 +143,7 @@ the touchpad. To change the shape of the slowdown itself, edit
 ```bash
 systemctl --user status finger-drag      # is it running?
 journalctl --user -u finger-drag -n 20   # what did it say?
-cd ~/finger-drag && python3 -m finger_drag.daemon --check
+python3 -m finger_drag.daemon --check
 ```
 
 `--check` exits 0 when both devices are accessible and 3 when access is
@@ -146,7 +153,7 @@ missing. Any other status is a different problem, such as a missing
 ## Tests
 
 ```bash
-cd ~/finger-drag && python3 -m unittest discover -s tests
+python3 -m unittest discover -s tests
 ```
 
 ## Manual checklist
