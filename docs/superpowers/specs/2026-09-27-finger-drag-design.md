@@ -112,7 +112,8 @@ SwitchWorkspace(direction)  # Direction.NEXT or Direction.PREVIOUS
 
 ```
 IDLE
-  count == 3 and travel since touchdown >= DRAG_START_MM  -> ButtonDown, DRAGGING
+  count == 3 for at least DRAG_SETTLE_S
+    and travel since touchdown >= DRAG_START_MM           -> ButtonDown, DRAGGING
   count >= 4                                              -> SWIPE_TRACKING
 
 DRAGGING
@@ -138,6 +139,13 @@ SWIPE_DONE
 `SWIPE_DONE` guarantees one switch per swipe: the fingers must fully lift
 before another switch can fire.
 
+Fingers rarely land in the same frame. If three are down and moving when a
+fourth arrives a few frames later, the drag threshold could be crossed in
+between, producing a click on whatever is under the pointer. `DRAG_SETTLE_S`
+prevents that: the count must have been exactly three for that long before
+the button goes down. Travel still accumulates during the wait. (Added after
+the whole-branch review, 2026-09-27.)
+
 In `SWIPE_TRACKING`, travel accumulates only over frames where `count >= 4`.
 Frames with one to three fingers are ignored and leave the state unchanged,
 so fingers lifting unevenly at the end of a swipe cannot start a drag.
@@ -149,6 +157,7 @@ Module-level constants at the top of `gestures.py`:
 | Constant | Initial value | Meaning |
 |---|---|---|
 | `DRAG_START_MM` | 2.0 | Travel needed before a three-finger touch becomes a drag. Keeps three-finger tap working. |
+| `DRAG_SETTLE_S` | 0.05 | How long the count must stay at three before a drag can start. Keeps a four-finger swipe from clicking as the fingers land. |
 | `DRAG_RELEASE_S` | 0.3 | How long the button stays held after fingers lift. |
 | `POINTER_COUNTS_PER_MM` | 12.0 | Pointer speed during a drag. |
 | `SWIPE_MM` | 15.0 | Sideways travel needed to switch workspace. |
@@ -175,6 +184,14 @@ Track per-slot state from `ABS_MT_SLOT`, `ABS_MT_TRACKING_ID`,
 `ABS_MT_POSITION_X` and `ABS_MT_POSITION_Y`. A slot is active while its
 tracking id is not -1. On each `SYN_REPORT`, compute `count` and the centroid
 of active slots and call `machine.update`.
+
+A slot whose `ABS_MT_TOOL_TYPE` is `MT_TOOL_PALM` is not counted, matching
+what libinput does with contacts the firmware classifies as palms.
+
+On `SYN_DROPPED` (the kernel's event buffer overran) slot state is stale. The
+daemon ends any gesture in progress, discards events up to and including the
+next `SYN_REPORT`, then starts again from an empty slot table and the
+device's current slot. Fingers must touch again to start a gesture.
 
 The event loop waits on the device with a timeout taken from
 `machine.next_deadline()` and calls `machine.tick` when the timeout expires.
@@ -270,6 +287,12 @@ the rule, reload udev.
 | Four fingers travel vertically | no actions |
 | Fourth finger lands during a drag | `ButtonUp`, then swipe tracking |
 | One and two fingers, any motion | no actions |
+| Three fingers cross `DRAG_START_MM` before `DRAG_SETTLE_S` has passed | no `ButtonDown` until it has |
+| Fourth finger lands 21 ms after three that are already moving | one `SwitchWorkspace`, no button events |
+| Contact flagged as a palm | not counted as a finger |
+| `SYN_DROPPED` mid-drag | drag ends, button released after `DRAG_RELEASE_S` |
+| Events between `SYN_DROPPED` and the next `SYN_REPORT` | discarded |
+| `SIGTERM`, or the touchpad vanishing, mid-drag | button and keys released, devices closed |
 
 Run with `python3 -m unittest discover -s tests`.
 
