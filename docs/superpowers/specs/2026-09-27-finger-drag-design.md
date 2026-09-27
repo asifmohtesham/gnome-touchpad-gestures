@@ -1,7 +1,9 @@
-# finger-drag: three-finger drag and four-finger workspace switch
+# finger-drag: macOS-style touchpad gestures for GNOME on X11
 
 Date: 2026-09-27
-Status: design approved in conversation, awaiting spec review
+Status: implemented and in use. Written before the code and amended as it
+was built and reviewed; later sections supersede earlier ones where they
+differ.
 
 ## Goal
 
@@ -61,15 +63,21 @@ Rejected alternatives:
 ~/finger-drag/
   finger_drag/
     __init__.py
-    gestures.py        pure state machine, no device access
-    daemon.py          device discovery, event loop, uinput output
-  tests/
-    test_gestures.py   stdlib unittest
+    gestures.py        drag and four-finger swipes; pure, no device access
+    momentum.py        glide after a two-finger flick; pure
+    motion.py          whether fingers move together; pure
+    slots.py           raw multitouch events to finger frames; pure
+    output.py          actions to virtual devices and the shell
+    shell.py           the one D-Bus call to GNOME Shell
+    daemon.py          device discovery, event loop, shutdown
+  tests/               stdlib unittest, one file per module
   install/
     71-finger-drag.rules
     finger-drag.service
     install.sh
+    uninstall.sh
   README.md
+  LICENSE
 ```
 
 ## Component: `gestures.py`
@@ -264,7 +272,8 @@ these hold:
 - the touch never had three or more fingers, so drags and swipes never glide
 - the two fingers travelled at least `GLIDE_MIN_TRAVEL_MM`, further than a
   tap ever does
-- both fingers took part: each covered at least `TOGETHER_RATIO` of the
+- both fingers took part: each covered at least `TOGETHER_RATIO` (in
+  `motion.py`) of the
   motion they share, so a resting thumb or a pinch does not count
 - the pad itself was not clicked during the touch
 - the fingers were still moving when they left: no more than `STILL_S`
@@ -272,7 +281,9 @@ these hold:
   fewer fingers. A pad reports nothing while fingers rest, so a longer gap
   means they had stopped
 - no drag was still holding its button, which it does for
-  `SPOIL_LINGER_S` after its fingers lift
+  `SPOIL_LINGER_S` after its fingers lift. This is judged at the moment of
+  the lift only, and only a touch with three or more fingers starts the
+  wait. A click does not, and one refused flick does not refuse the next
 
 A glide emits `Scroll(dx, dy)` every `GLIDE_FRAME_S`, in high-resolution
 wheel units (120 per notch). Its speed is the starting speed times
@@ -340,13 +351,17 @@ until half a notch has built up, which shows as stutter.
 `install/71-finger-drag.rules`:
 
 ```
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="SYNA8017:00 06CB:CEB2 Touchpad", TAG+="uaccess"
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
 ```
 
 `uaccess` makes logind grant an ACL to the user at the active seat and remove
 it at logout. The file name must sort before `73-seat-late.rules`, which is
 where the tag is applied.
+
+The first version matched the touchpad by name. It now matches udev's own
+`ID_INPUT_TOUCHPAD` property, so nobody has to edit the rule for their
+hardware, and a wrong name can no longer be mistaken for a missing login.
 
 Trade-off accepted: write access to `/dev/uinput` lets this user's processes
 inject input. On X11 any client can already do that through XTest, so this
@@ -358,8 +373,9 @@ adds no meaningful exposure in the current session.
 
 ```ini
 [Unit]
-Description=Three-finger drag and four-finger workspace switch
+Description=Touchpad gestures: three-finger drag, four-finger swipes, momentum scrolling
 PartOf=graphical-session.target
+ConditionEnvironment=XDG_SESSION_TYPE=x11
 After=graphical-session.target
 
 [Service]
@@ -460,6 +476,16 @@ toggle: swiping up with the overview already open would close it. So the
 daemon sets the state it wants instead, through the `OverviewActive`
 property of `org.gnome.Shell` on the session bus. Each direction then has one
 meaning, and repeating a swipe changes nothing.
+
+A four-finger swipe, sideways or vertical, counts only if every contact
+takes part: each must cover at least `TOGETHER_RATIO` of the motion they
+share, measured once they have travelled `SWIPE_TOGETHER_MM` together. A
+resting thumb or palm beside moving fingers is therefore not a swipe.
+
+The call goes to the shell's well-known bus name directly, not through a
+proxy object. A proxy first asks the shell to describe itself, with a wait of
+up to 25 seconds that the timeout does not cover, and stays bound to the
+shell it met, so it misses a shell that was restarted.
 
 `finger_drag/shell.py` holds that one call. It connects on first use, passes
 a timeout of `OVERVIEW_TIMEOUT_S` (0.5 s) because the call runs on the
