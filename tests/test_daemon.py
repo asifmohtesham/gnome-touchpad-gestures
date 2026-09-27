@@ -79,8 +79,42 @@ class PumpTest(unittest.TestCase):
         self.assertIs(self.machine.state, State.RELEASE_WAIT)
         self.assertEqual(self.machine.tick(60.0), [ButtonUp()])
 
+    def test_events_after_a_drop_are_discarded_until_the_next_report(self):
+        self.pump([
+            Event(e.EV_SYN, e.SYN_DROPPED, 0),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 77),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 400),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 300),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.0)
+        frame = self.tracker.feed(e.EV_SYN, e.SYN_REPORT, 0)
+        self.assertEqual(frame.count, 0)
+
+    def test_discarding_continues_across_read_batches(self):
+        self.pump([Event(e.EV_SYN, e.SYN_DROPPED, 0)], 0.0)
+        self.pump([
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 77),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 400),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 300),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.1)
+        frame = self.tracker.feed(e.EV_SYN, e.SYN_REPORT, 0)
+        self.assertEqual(frame.count, 0)
+
+    def test_gestures_work_again_after_a_drop(self):
+        self.pump([
+            Event(e.EV_SYN, e.SYN_DROPPED, 0),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.0)
+        self.pump(three_fingers_at(500), 1.00)
+        self.pump(three_fingers_at(530), 1.06)
+        self.assertEqual(self.output.actions, [ButtonDown()])
+
     def test_syn_dropped_resyncs_the_current_slot(self):
-        self.pump([Event(e.EV_SYN, e.SYN_DROPPED, 0)], 0.0, current_slot=3)
+        self.pump([
+            Event(e.EV_SYN, e.SYN_DROPPED, 0),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.0, current_slot=3)
         self.pump([
             Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 50),
             Event(e.EV_ABS, e.ABS_MT_POSITION_X, 100),

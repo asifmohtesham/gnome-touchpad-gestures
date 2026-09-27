@@ -112,6 +112,14 @@ class SlotTrackerTest(unittest.TestCase):
         self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, 0)
         self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
 
+    def test_begin_resync_forgets_fingers_until_reset(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        self.tracker.begin_resync()
+        self.assertTrue(self.tracker.resyncing)
+        self.assertEqual(report(self.tracker), Frame(0, 0.0, 0.0))
+        self.tracker.reset(0)
+        self.assertFalse(self.tracker.resyncing)
+
     def test_unrelated_events_are_ignored(self):
         self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1))
         self.assertIsNone(self.tracker.feed(e.EV_ABS, e.ABS_X, 500))

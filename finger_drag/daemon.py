@@ -61,8 +61,14 @@ def pump(events, current_slot, tracker, machine, output, now: float) -> None:
         if event.type == e.EV_SYN and event.code == e.SYN_DROPPED:
             # The kernel dropped events, so slot state is stale. End whatever
             # gesture was in progress; fingers must touch again to start one.
-            tracker.reset(current_slot())
+            tracker.begin_resync()
             output.emit(machine.update(now, 0, 0.0, 0.0))
+            continue
+        if tracker.resyncing:
+            # The rest of the interrupted packet belongs to slots we can no
+            # longer identify, so it is discarded up to the next report.
+            if event.type == e.EV_SYN and event.code == e.SYN_REPORT:
+                tracker.reset(current_slot())
             continue
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:

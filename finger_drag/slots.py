@@ -43,10 +43,17 @@ class SlotTracker:
         self._y_units_per_mm = y_units_per_mm
         self._slots: dict[int, _Slot] = {}
         self._current = current_slot
+        self.resyncing = False
+
+    def begin_resync(self) -> None:
+        """Forget every finger; the caller discards events until reset()."""
+        self._slots.clear()
+        self.resyncing = True
 
     def reset(self, current_slot: int) -> None:
         self._slots.clear()
         self._current = current_slot
+        self.resyncing = False
 
     def feed(self, etype: int, code: int, value: int) -> Frame | None:
         if etype == e.EV_SYN and code == e.SYN_REPORT:
