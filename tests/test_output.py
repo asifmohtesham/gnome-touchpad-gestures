@@ -3,7 +3,7 @@ import unittest
 from evdev import ecodes as e
 
 from finger_drag.gestures import (
-    ButtonDown, ButtonUp, Direction, Move, SwitchWorkspace)
+    ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
 from finger_drag.momentum import Scroll
 from finger_drag.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
 
@@ -21,6 +21,14 @@ class FakeDevice:
         self.events.append(SYN)
 
 
+class FakeShell:
+    def __init__(self):
+        self.requests = []
+
+    def show_overview(self, show):
+        self.requests.append(show)
+
+
 def total(events, code):
     return sum(ev[2] for ev in events if ev != SYN and ev[0] == e.EV_REL and ev[1] == code)
 
@@ -30,9 +38,11 @@ class OutputTest(unittest.TestCase):
         self.pointer = FakeDevice()
         self.keyboard = FakeDevice()
         self.wheel = FakeDevice()
+        self.shell = FakeShell()
         self.sleeps = []
         self.output = Output(
-            self.pointer, self.keyboard, self.wheel, sleep=self.sleeps.append)
+            self.pointer, self.keyboard, self.wheel, self.shell,
+            sleep=self.sleeps.append)
 
     def test_button_down_and_up(self):
         self.output.emit([ButtonDown(), ButtonUp()])
@@ -95,6 +105,13 @@ class OutputTest(unittest.TestCase):
         self.pointer.events.clear()
         self.output.emit([Move(0.5, 0.0)])
         self.assertEqual(self.pointer.events, [])
+
+    def test_overview_goes_to_the_shell_and_touches_no_device(self):
+        self.output.emit([Overview(show=True), Overview(show=False)])
+        self.assertEqual(self.shell.requests, [True, False])
+        self.assertEqual(self.pointer.events, [])
+        self.assertEqual(self.keyboard.events, [])
+        self.assertEqual(self.wheel.events, [])
 
     def test_scroll_writes_high_resolution_wheel_units(self):
         self.output.emit([Scroll(0.0, 40.0)])

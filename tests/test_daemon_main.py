@@ -93,6 +93,25 @@ def all_fingers_lift():
     return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
 
 
+def four_fingers_at(y):
+    events = []
+    for slot in range(4):
+        events += [
+            Event(e.EV_ABS, e.ABS_MT_SLOT, slot),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 500 + slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 300 + 100 * slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, y),
+        ]
+    return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+class FakeShell:
+    requests = []
+
+    def show_overview(self, show):
+        FakeShell.requests.append(show)
+
+
 def two_fingers_at(y):
     events = []
     for slot in range(2):
@@ -145,6 +164,7 @@ def vanish():
 class MainTest(unittest.TestCase):
     def setUp(self):
         self.devices = {}
+        FakeShell.requests = []
         self.addCleanup(
             signal.signal, signal.SIGTERM, signal.getsignal(signal.SIGTERM))
 
@@ -163,6 +183,7 @@ class MainTest(unittest.TestCase):
         with mock.patch.object(daemon, "find_touchpad", return_value=touchpad), \
                 mock.patch.object(daemon.os, "access", return_value=True), \
                 mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
+                mock.patch.object(daemon, "Shell", FakeShell), \
                 contextlib.redirect_stdout(io.StringIO()):
             return daemon.main([])
 
@@ -255,6 +276,20 @@ class MainTest(unittest.TestCase):
 
         self.assertGreater(len(self.wheel_units()), 5)
         self.assertEqual(self.written_after_touch, 0)
+
+    def test_four_finger_swipe_up_asks_the_shell_for_the_overview(self):
+        touchpad = FakeTouchpad([
+            lambda: four_fingers_at(400),
+            lambda: four_fingers_at(300),
+            lambda: four_fingers_at(200),
+            interrupt,
+        ])
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        self.assertEqual(FakeShell.requests, [True])
+        self.assertEqual(self.button_values(), [0])
+        self.assertEqual(self.wheel_units(), [])
 
     def test_fingers_down_at_startup_do_not_start_a_drag(self):
         touchpad = FakeTouchpad(

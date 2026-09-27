@@ -1,4 +1,4 @@
-"""Translates gesture actions into events on three virtual devices."""
+"""Carries out gesture actions: three virtual devices and the desktop shell."""
 from __future__ import annotations
 
 import time
@@ -6,7 +6,7 @@ import time
 from evdev import ecodes as e
 
 from finger_drag.gestures import (
-    Action, ButtonDown, ButtonUp, Direction, Move, SwitchWorkspace)
+    Action, ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
 from finger_drag.momentum import Scroll
 
 WORKSPACE_KEYS = (e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_LEFT, e.KEY_RIGHT)
@@ -17,10 +17,11 @@ _ARROW = {Direction.NEXT: e.KEY_RIGHT, Direction.PREVIOUS: e.KEY_LEFT}
 
 
 class Output:
-    def __init__(self, pointer, keyboard, wheel, sleep=time.sleep) -> None:
+    def __init__(self, pointer, keyboard, wheel, shell, sleep=time.sleep) -> None:
         self._pointer = pointer
         self._keyboard = keyboard
         self._wheel = wheel
+        self._shell = shell
         self._sleep = sleep
         self._rest_x = 0.0
         self._rest_y = 0.0
@@ -38,6 +39,8 @@ class Output:
                 self._button(0)
             elif isinstance(action, SwitchWorkspace):
                 self._chord(_ARROW[action.direction])
+            elif isinstance(action, Overview):
+                self._shell.show_overview(action.show)
 
     def release_all(self) -> None:
         self._button(0)
