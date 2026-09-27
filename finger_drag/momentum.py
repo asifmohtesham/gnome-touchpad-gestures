@@ -9,17 +9,27 @@ import collections
 import math
 from dataclasses import dataclass
 
+from finger_drag.gestures import DRAG_RELEASE_S
+
 # How the glide feels.
 GLIDE_TAU_S = 0.5            # slowdown time constant: longer is a longer tail
 GLIDE_MIN_MM_S = 40.0        # slowest flick that glides
-GLIDE_STOP_UNITS_S = 40.0    # the glide ends below this; 120 units is one notch
+GLIDE_MAX_MM_S = 600.0       # faster than fingers move; caps a misread speed
+GLIDE_STOP_UNITS_S = 480.0   # the glide ends below this; 120 units is one notch
 GLIDE_FRAME_S = 0.008        # time between glide steps
+GLIDE_LATE_FRAMES = 3        # a late step never covers more than this many
 
-# How finger travel maps to scrolling. SCROLL_UNITS_PER_MM should equal what
-# libinput scrolls per millimetre, so the page keeps its speed at the lift.
-SCROLL_UNITS_PER_MM = 94.0
+# How finger travel maps to scrolling. SCROLL_UNITS_PER_MM equals what libinput
+# scrolls per millimetre, so the page keeps its speed at the lift: 39.37 units
+# per mm at 1000 dpi, times libinput's unaccelerated touchpad factor of
+# 0.9 * 0.2968, times the 8 wheel units the X driver gives each of those.
+SCROLL_UNITS_PER_MM = 84.0
 NATURAL_SCROLL = True        # the touchpad's setting; the page follows the fingers
-AXIS_LOCK_RATIO = 2.0        # a flick this lopsided glides along one axis only
+
+# What counts as scrolling, as opposed to two contacts that merely moved.
+GLIDE_MIN_TRAVEL_MM = 3.0    # further than a tap ever travels
+TOGETHER_RATIO = 0.5         # each finger covers this much of the shared motion
+SPOIL_LINGER_S = DRAG_RELEASE_S  # a drag still holds its button this long
 
 # How finger speed is measured.
 SPEED_WINDOW_S = 0.06        # speed is averaged over this long
@@ -39,13 +49,31 @@ def glide_speed(elapsed: float) -> float:
     return math.exp(-elapsed / GLIDE_TAU_S)
 
 
+def moving_together(before: tuple, after: tuple, shared: tuple) -> bool:
+    """Whether every finger took a fair part in the motion they share.
+
+    A resting thumb takes none and a pinching finger goes against it; in both
+    cases the centroid moves although nothing is being scrolled.
+    """
+    length = math.hypot(*shared)
+    if length == 0.0:
+        return False
+    for (x0, y0), (x1, y1) in zip(before, after):
+        along = ((x1 - x0) * shared[0] + (y1 - y0) * shared[1]) / length
+        if along < TOGETHER_RATIO * length:
+            return False
+    return True
+
+
 class MomentumMachine:
     def __init__(self) -> None:
         self._count = 0
         self._history: collections.deque = collections.deque()
         self._velocity = (0.0, 0.0)   # mm/s of the last two-finger motion
         self._velocity_at = -math.inf
-        self._spoiled = False         # this touch has had three or more fingers
+        self._travel = 0.0            # mm scrolled during this touch
+        self._spoiled = False         # this touch cannot end in a glide
+        self._spoiled_until = -math.inf
         self._glide: tuple[float, float] | None = None  # starting units/s
         self._started = 0.0
         self._last = 0.0
@@ -62,17 +90,19 @@ class MomentumMachine:
         if math.hypot(vx, vy) < GLIDE_STOP_UNITS_S:
             self._end_glide()
             return []
-        step = t - self._last
+        # After a stall, skip the distance missed instead of jumping it.
+        step = min(t - self._last, GLIDE_LATE_FRAMES * GLIDE_FRAME_S)
         self._last = t
         self._deadline = t + GLIDE_FRAME_S
         return [Scroll(vx * step, vy * step)]
 
     def update(self, t: float, count: int, cx: float, cy: float,
-               regrouped: bool = False) -> list[Scroll]:
+               regrouped: bool = False, fingers: tuple = (),
+               pressed: bool = False) -> list[Scroll]:
         changed = count != self._count or regrouped
         self._count = count
         if count > 0:
-            self._touching(t, count, cx, cy, changed)
+            self._touching(t, count, cx, cy, changed, fingers, pressed)
         else:
             self._lifted(t)
         return []
@@ -80,18 +110,18 @@ class MomentumMachine:
     def interrupt(self, t: float) -> list[Scroll]:
         """Finger state was lost; this is not a lift, so nothing may glide."""
         self._end_glide()
-        self._history.clear()
-        self._forget_speed()
-        self._spoiled = False
+        self._forget_touch()
         self._count = 0
         return []
 
     def _touching(self, t: float, count: int, cx: float, cy: float,
-                  changed: bool) -> None:
+                  changed: bool, fingers: tuple, pressed: bool) -> None:
         if self._deadline is not None:
             # Any touch stops a glide.
             self._end_glide()
-        if count >= 3:
+        if count >= 3 or pressed or t < self._spoiled_until:
+            # Drags, swipes and clicks are not scrolling, and neither is
+            # anything done while a drag still holds its button.
             self._spoiled = True
         if count != 2:
             # A lone finger may be the second one lifting late, so the speed
@@ -101,31 +131,46 @@ class MomentumMachine:
         if changed:
             # A different set of fingers: the centroid is not comparable.
             self._history.clear()
-        self._history.append((t, cx, cy))
+        if self._history:
+            _, x, y, _ = self._history[-1]
+            self._travel += math.hypot(cx - x, cy - y)
+        self._history.append((t, cx, cy, fingers))
         while t - self._history[0][0] > SPEED_WINDOW_S:
             self._history.popleft()
-        then, x, y = self._history[0]
+        then, x, y, before = self._history[0]
         span = t - then
-        if span >= SPEED_MIN_SPAN_S:
-            self._velocity = ((cx - x) / span, (cy - y) / span)
-            self._velocity_at = t
+        if span < SPEED_MIN_SPAN_S:
+            return
+        shared = (cx - x, cy - y)
+        self._velocity_at = t
+        if fingers and not moving_together(before, fingers, shared):
+            self._velocity = (0.0, 0.0)
+        else:
+            self._velocity = (shared[0] / span, shared[1] / span)
 
     def _lifted(self, t: float) -> None:
         fresh = t - self._velocity_at <= LIFT_GRACE_S
         fast = math.hypot(*self._velocity) >= GLIDE_MIN_MM_S
-        if fresh and fast and not self._spoiled and self._deadline is None:
+        scrolled = self._travel >= GLIDE_MIN_TRAVEL_MM
+        if (fresh and fast and scrolled and not self._spoiled
+                and self._deadline is None):
             self._glide = self._wheel_velocity(*self._velocity)
             self._started = self._last = t
             self._deadline = t + GLIDE_FRAME_S
-        self._history.clear()
-        self._forget_speed()
-        self._spoiled = False
+        if self._spoiled:
+            self._spoiled_until = t + SPOIL_LINGER_S
+        self._forget_touch()
 
     def _wheel_velocity(self, vx: float, vy: float) -> tuple[float, float]:
-        if abs(vy) >= AXIS_LOCK_RATIO * abs(vx):
+        # One axis only, as libinput itself scrolls: it keeps a single
+        # direction per device, and a wheel turning both ways at once makes
+        # it hold events back until half a notch has built up.
+        if abs(vy) >= abs(vx):
             vx = 0.0
-        elif abs(vx) >= AXIS_LOCK_RATIO * abs(vy):
+        else:
             vy = 0.0
+        vx = max(-GLIDE_MAX_MM_S, min(GLIDE_MAX_MM_S, vx))
+        vy = max(-GLIDE_MAX_MM_S, min(GLIDE_MAX_MM_S, vy))
         # Wheel up (positive) moves the page down; scrolling right (positive)
         # moves the page left. With natural scrolling the page follows the
         # fingers, so down is up and right is left.
@@ -133,9 +178,12 @@ class MomentumMachine:
         return (-follow * vx * SCROLL_UNITS_PER_MM,
                 follow * vy * SCROLL_UNITS_PER_MM)
 
-    def _forget_speed(self) -> None:
+    def _forget_touch(self) -> None:
+        self._history.clear()
         self._velocity = (0.0, 0.0)
         self._velocity_at = -math.inf
+        self._travel = 0.0
+        self._spoiled = False
 
     def _end_glide(self) -> None:
         self._glide = None

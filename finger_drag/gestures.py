@@ -85,7 +85,8 @@ class GestureMachine:
         return []
 
     def update(self, t: float, count: int, cx: float, cy: float,
-               regrouped: bool = False) -> list[Action]:
+               regrouped: bool = False, fingers: tuple = (),
+               pressed: bool = False) -> list[Action]:
         actions = self.tick(t)
         dx, dy = self._delta(t, count, cx, cy, regrouped)
         if self.state is State.IDLE:

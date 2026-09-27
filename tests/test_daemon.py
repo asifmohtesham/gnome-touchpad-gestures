@@ -194,6 +194,40 @@ class PumpMomentumTest(unittest.TestCase):
         ], 0.06)
         self.assertIsNotNone(self.machine.next_deadline())
 
+    def test_resting_thumb_and_moving_finger_do_not_glide(self):
+        for index in range(15):
+            self.pump([
+                Event(e.EV_ABS, e.ABS_MT_SLOT, 0),
+                Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 300),
+                Event(e.EV_ABS, e.ABS_MT_POSITION_X, 300),
+                Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 400),
+                Event(e.EV_ABS, e.ABS_MT_SLOT, 1),
+                Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 301),
+                Event(e.EV_ABS, e.ABS_MT_POSITION_X, 600),
+                Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 100 + 7 * index),
+                Event(e.EV_SYN, e.SYN_REPORT, 0),
+            ], index * 0.007)
+        self.pump([
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 0),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 1),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.105)
+        self.assertIsNone(self.machine.next_deadline())
+
+    def test_clicking_the_pad_while_scrolling_does_not_glide(self):
+        self.pump([Event(e.EV_KEY, e.BTN_LEFT, 1)], 0.0)
+        self.flick()
+        self.pump([
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 0),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 1),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.06)
+        self.assertIsNone(self.machine.next_deadline())
+
     def test_dropped_events_mid_scroll_do_not_start_a_glide(self):
         self.flick()
         self.pump([Event(e.EV_SYN, e.SYN_DROPPED, 0)], 0.06)
@@ -207,8 +241,9 @@ class FakeMachine:
         self.deadline = deadline
         self.updates = []
 
-    def update(self, t, count, cx, cy, regrouped=False):
-        self.updates.append((t, count, cx, cy, regrouped))
+    def update(self, t, count, cx, cy, regrouped=False, fingers=(),
+               pressed=False):
+        self.updates.append((t, count, cx, cy, regrouped, fingers, pressed))
         return [self.action]
 
     def interrupt(self, t):
@@ -228,10 +263,12 @@ class MachinesTest(unittest.TestCase):
         self.machines = Machines(self.first, self.second)
 
     def test_every_machine_sees_every_frame(self):
-        actions = self.machines.update(1.0, 2, 3.0, 4.0, True)
+        fingers = ((1.0, 2.0), (5.0, 6.0))
+        actions = self.machines.update(1.0, 2, 3.0, 4.0, True, fingers, True)
         self.assertEqual(actions, ["first", "second"])
-        self.assertEqual(self.first.updates, [(1.0, 2, 3.0, 4.0, True)])
-        self.assertEqual(self.second.updates, [(1.0, 2, 3.0, 4.0, True)])
+        seen = [(1.0, 2, 3.0, 4.0, True, fingers, True)]
+        self.assertEqual(self.first.updates, seen)
+        self.assertEqual(self.second.updates, seen)
 
     def test_tick_reaches_every_machine(self):
         self.assertEqual(self.machines.tick(1.0), ["first", "second"])

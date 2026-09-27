@@ -1,5 +1,5 @@
 [Unit]
-Description=Three-finger drag and four-finger workspace switch
+Description=Touchpad gestures: three-finger drag, four-finger swipes, momentum scrolling
 PartOf=graphical-session.target
 After=graphical-session.target
 

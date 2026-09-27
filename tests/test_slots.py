@@ -188,8 +188,30 @@ class SlotTrackerTest(unittest.TestCase):
         touch(self.tracker, 0, 2, 100, 200)
         self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
 
+    def test_frame_lists_each_finger_in_slot_order(self):
+        touch(self.tracker, 1, 2, 300, 600)
+        touch(self.tracker, 0, 1, 100, 200)
+        self.assertEqual(report(self.tracker).fingers,
+                         ((10.0, 10.0), (30.0, 30.0)))
+
+    def test_frame_without_fingers_lists_none(self):
+        self.assertEqual(report(self.tracker).fingers, ())
+
+    def test_frame_reports_the_pad_being_clicked(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        self.assertFalse(report(self.tracker).pressed)
+        self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1)
+        self.assertTrue(report(self.tracker).pressed)
+        self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 0)
+        self.assertFalse(report(self.tracker).pressed)
+
+    def test_reset_forgets_the_click(self):
+        self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1)
+        self.tracker.reset(0)
+        self.assertFalse(report(self.tracker).pressed)
+
     def test_unrelated_events_are_ignored(self):
-        self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1))
+        self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_RIGHT, 1))
         self.assertIsNone(self.tracker.feed(e.EV_ABS, e.ABS_X, 500))
         self.assertIsNone(self.tracker.feed(e.EV_SYN, e.SYN_DROPPED, 0))
         self.assertEqual(report(self.tracker), Frame(0, 0.0, 0.0))
