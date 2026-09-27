@@ -60,7 +60,7 @@ Rejected alternatives:
 ## Layout
 
 ```
-~/finger-drag/
+<repository>/          anywhere; the installer records the location
   finger_drag/
     __init__.py
     gestures.py        drag and four-finger swipes; pure, no device access
@@ -380,7 +380,7 @@ After=graphical-session.target
 
 [Service]
 ExecStart=/usr/bin/python3 -m finger_drag.daemon
-WorkingDirectory=%h/finger-drag
+WorkingDirectory=@REPO@
 Restart=on-failure
 RestartSec=2
 
@@ -397,7 +397,15 @@ WantedBy=graphical-session.target
 3. Verify the current user can open both devices. If the check reports
    missing access (status 3), say that logging out and back in is required
    and stop. If it fails any other way, say so and do not suggest a re-login.
-4. Copy the unit to `~/.config/systemd/user/`, reload, enable and start it.
+4. Write the unit to `~/.config/systemd/user/` with the repository's
+   location filled in, then reload, enable and start it.
+
+The unit in the repository is a template: `WorkingDirectory=@REPO@`. The
+installer replaces `@REPO@` with the directory it was run from, doubling any
+`%` because systemd reads a single one as the start of a specifier. The
+first version required the repository to be at `~/finger-drag`; it may now
+live anywhere. Moving it afterwards means running the installer again, since
+the installed unit still names the old place.
 
 Before step 1 it confirms `python3-evdev` can be imported, so a missing
 dependency is reported before anything on the system is changed.
