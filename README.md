@@ -233,6 +233,10 @@ Run after installing or changing a tunable.
 - A glide does not know where the page ends. In GTK apps the glow or
   bounce at the end of a page can stay until the glide is over. Touch the
   pad to end it sooner.
+- The virtual devices are called `gnome-x11-gestures pointer`, `keyboard`
+  and `wheel`, without the word "touchpad". GNOME decides what kind of device
+  something is from words in its name, and would give a "touchpad" wheel the
+  touchpad's settings.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
   natural scrolling is on for the touchpad and off for mice. If yours
   differ, set `NATURAL_SCROLL` in `gnome_x11_touchpad_gestures/momentum.py`.

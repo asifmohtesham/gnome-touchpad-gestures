@@ -20,6 +20,13 @@ from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
+# Not the project's full name, on purpose. GNOME's window manager sorts input
+# devices by words in their names, and "touchpad" in a name gets a device the
+# touchpad's settings: natural scrolling would turn every glide round, and
+# the pointer would take the touchpad's speed.
+POINTER_NAME = "gnome-x11-gestures pointer"
+KEYBOARD_NAME = "gnome-x11-gestures keyboard"
+WHEEL_NAME = "gnome-x11-gestures wheel"
 # Distinct from a crash (1) or a usage error (2) so that install.sh can tell
 # "log out and back in" apart from every other failure.
 EXIT_NO_ACCESS = 3
@@ -223,16 +230,16 @@ def main(argv=None) -> int:
 
         pointer = create(
             {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
-            "gnome-x11-touchpad-gestures pointer")
+            POINTER_NAME)
         keyboard = create(
-            {e.EV_KEY: list(WORKSPACE_KEYS)}, "gnome-x11-touchpad-gestures keyboard")
+            {e.EV_KEY: list(WORKSPACE_KEYS)}, KEYBOARD_NAME)
         # The motion axes and buttons are never used; they are what makes
         # libinput accept the device as a mouse and listen to its wheel.
         wheel = create(
             {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
                         e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
              e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
-            "gnome-x11-touchpad-gestures wheel")
+            WHEEL_NAME)
         output = Output(pointer, keyboard, wheel, Shell())
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)

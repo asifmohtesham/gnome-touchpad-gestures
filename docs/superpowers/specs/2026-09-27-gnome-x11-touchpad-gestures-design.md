@@ -238,13 +238,22 @@ The event loop waits on the device with a timeout taken from
 
 ### Writing
 
-Three virtual devices, so that libinput classifies each one cleanly:
+Three virtual devices, so that libinput classifies each one cleanly.
+
+Their names leave out the word "touchpad", although the project's name has
+it. GNOME's window manager sorts input devices by words in their names,
+after lower-casing them: "touchpad", "touchscreen", "trackpoint", "eraser",
+"cursor", " pad", "wacom" and "pen". A device whose name matches gets that
+kind of device's settings, whatever udev says it is. For a short while the
+devices carried the project's full name. GNOME then gave the wheel the
+touchpad's natural scrolling, which turned every glide round, and gave the
+pointer the touchpad's speed. A test now keeps those words out of the names.
 
 | Device | Capabilities |
 |---|---|
-| `gnome-x11-touchpad-gestures pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
-| `gnome-x11-touchpad-gestures keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
-| `gnome-x11-touchpad-gestures wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
+| `gnome-x11-gestures pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
+| `gnome-x11-gestures keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
+| `gnome-x11-gestures wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
 
 | Action | Events |
 |---|---|
@@ -340,7 +349,7 @@ never inherits part of an old one.
 Not solvable here: a glide cannot know that the page has reached its end,
 so an app's end-of-page effect may last until the glide is over.
 
-Output goes to a third virtual device, `gnome-x11-touchpad-gestures wheel`, as
+Output goes to a third virtual device, `gnome-x11-gestures wheel`, as
 `REL_WHEEL_HI_RES` and `REL_HWHEEL_HI_RES`, with a `REL_WHEEL` or
 `REL_HWHEEL` notch for every 120 units for programs that predate
 high-resolution scrolling. The device also declares motion axes and buttons

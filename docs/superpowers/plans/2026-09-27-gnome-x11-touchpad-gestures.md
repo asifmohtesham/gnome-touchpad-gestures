@@ -28,7 +28,7 @@
   git worktree: the systemd unit runs the code from `%h/gnome-x11-touchpad-gestures`.
 - Tunables are module-level constants. No configuration file.
 - Touchpad name for the udev rule, verbatim: `SYNA8017:00 06CB:CEB2 Touchpad`.
-- Virtual device names, verbatim: `gnome-x11-touchpad-gestures pointer`, `gnome-x11-touchpad-gestures keyboard`.
+- Virtual device names, verbatim: `gnome-x11-gestures pointer`, `gnome-x11-gestures keyboard`.
 
 ## Deviation from the spec layout
 
@@ -1380,9 +1380,9 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, _terminate)
     pointer = evdev.UInput(
         {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
-        name="gnome-x11-touchpad-gestures pointer")
+        name="gnome-x11-gestures pointer")
     keyboard = evdev.UInput(
-        {e.EV_KEY: list(WORKSPACE_KEYS)}, name="gnome-x11-touchpad-gestures keyboard")
+        {e.EV_KEY: list(WORKSPACE_KEYS)}, name="gnome-x11-gestures keyboard")
     output = Output(pointer, keyboard)
     print(f"gnome-x11-touchpad-gestures: listening on {device.path} ({device.name})", flush=True)
     try:
@@ -1664,7 +1664,7 @@ Run: `systemctl --user is-active gnome-x11-touchpad-gestures && systemctl --user
 Expected: `active` then `enabled`.
 
 Run: `xinput list --name-only | grep gnome-x11-touchpad-gestures`
-Expected: `gnome-x11-touchpad-gestures pointer` and `gnome-x11-touchpad-gestures keyboard`.
+Expected: `gnome-x11-gestures pointer` and `gnome-x11-gestures keyboard`.
 
 Run: `journalctl --user -u gnome-x11-touchpad-gestures -n 20 --no-pager`
 Expected: the `listening on` line and no tracebacks.

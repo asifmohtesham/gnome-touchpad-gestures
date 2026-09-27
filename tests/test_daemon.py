@@ -59,6 +59,35 @@ class IsTouchpadTest(unittest.TestCase):
 BUS_USB, BUS_BLUETOOTH, BUS_I8042, BUS_I2C = 0x03, 0x05, 0x11, 0x18
 
 
+class DeviceNameTest(unittest.TestCase):
+    """GNOME sorts input devices by words in their names.
+
+    Its window manager lower-cases a device's name and looks for these words.
+    One that matches gets that kind of device's settings: a virtual wheel
+    called "... touchpad ..." is given the touchpad's natural scrolling, which
+    turns every glide round.
+    """
+
+    CLAIMED = ("touchpad", "touchscreen", "trackpoint", "eraser", "cursor",
+               " pad", "wacom", "pen")
+    NAMES = (daemon.POINTER_NAME, daemon.KEYBOARD_NAME, daemon.WHEEL_NAME)
+
+    def test_no_name_would_be_taken_for_another_kind_of_device(self):
+        for name in self.NAMES:
+            for word in self.CLAIMED:
+                with self.subTest(name=name, word=word):
+                    self.assertNotIn(word, name.lower())
+
+    def test_names_are_distinct_and_short_enough_for_the_kernel(self):
+        self.assertEqual(len(set(self.NAMES)), 3)
+        for name in self.NAMES:
+            self.assertLess(len(name), 80)
+
+    def test_names_say_what_made_them(self):
+        for name in self.NAMES:
+            self.assertTrue(name.startswith("gnome-x11-gestures "), name)
+
+
 class PreferenceTest(unittest.TestCase):
     def best(self, *candidates):
         return min(candidates, key=lambda c: preference(*c))[0]
