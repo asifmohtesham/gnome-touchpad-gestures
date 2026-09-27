@@ -43,6 +43,7 @@ Edit the constants at the top of `finger_drag/gestures.py`, then run
 | Constant | Default | Raise it to... |
 |---|---|---|
 | `DRAG_START_MM` | 2.0 | make accidental drags rarer |
+| `DRAG_SETTLE_S` | 0.05 | stop a four-finger swipe from clicking as the fingers land |
 | `DRAG_RELEASE_S` | 0.3 | get more time to reposition fingers mid-drag |
 | `POINTER_COUNTS_PER_MM` | 12.0 | make the pointer faster while dragging |
 | `SWIPE_MM` | 15.0 | require a longer swipe to switch workspace |

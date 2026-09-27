@@ -6,6 +6,7 @@ import math
 from dataclasses import dataclass
 
 DRAG_START_MM = 2.0
+DRAG_SETTLE_S = 0.05
 DRAG_RELEASE_S = 0.3
 POINTER_COUNTS_PER_MM = 12.0
 SWIPE_MM = 15.0
@@ -63,6 +64,7 @@ class GestureMachine:
         self.state = State.IDLE
         self._count = 0
         self._ref: tuple[float, float] | None = None
+        self._count_since = 0.0
         self._travel = (0.0, 0.0)
         self._swipe = (0.0, 0.0)
         self._deadline: float | None = None
@@ -78,9 +80,9 @@ class GestureMachine:
 
     def update(self, t: float, count: int, cx: float, cy: float) -> list[Action]:
         actions = self.tick(t)
-        dx, dy = self._delta(count, cx, cy)
+        dx, dy = self._delta(t, count, cx, cy)
         if self.state is State.IDLE:
-            actions += self._idle(count, dx, dy)
+            actions += self._idle(t, count, dx, dy)
         elif self.state is State.DRAGGING:
             actions += self._dragging(t, count, dx, dy)
         elif self.state is State.RELEASE_WAIT:
@@ -91,10 +93,12 @@ class GestureMachine:
             actions += self._swipe_done(count)
         return actions
 
-    def _delta(self, count: int, cx: float, cy: float) -> tuple[float, float]:
+    def _delta(self, t: float, count: int, cx: float, cy: float) -> tuple[float, float]:
         # The centroid jumps whenever a different set of fingers is averaged,
         # so a frame where the count changed carries no usable motion.
         changed = count != self._count
+        if changed:
+            self._count_since = t
         previous = self._ref
         self._count = count
         self._ref = (cx, cy) if count else None
@@ -113,12 +117,15 @@ class GestureMachine:
         self._deadline = None
         self._swipe = (0.0, 0.0)
 
-    def _idle(self, count: int, dx: float, dy: float) -> list[Action]:
+    def _idle(self, t: float, count: int, dx: float, dy: float) -> list[Action]:
         if count >= 4:
             self._enter_swipe()
         elif count == 3:
             self._travel = (self._travel[0] + dx, self._travel[1] + dy)
-            if math.hypot(*self._travel) >= DRAG_START_MM:
+            # Fingers rarely land in the same frame. Waiting for the count to
+            # settle keeps a four-finger swipe from clicking on its way in.
+            settled = t - self._count_since >= DRAG_SETTLE_S
+            if settled and math.hypot(*self._travel) >= DRAG_START_MM:
                 self.state = State.DRAGGING
                 return [ButtonDown()]
         return []

@@ -18,8 +18,8 @@ def start_drag(machine):
     """Three fingers land at (50, 25) mm and travel 2.5 mm right."""
     return feed(machine, [
         (0.00, 3, 50.0, 25.0),
-        (0.01, 3, 51.0, 25.0),
-        (0.02, 3, 52.5, 25.0),
+        (0.03, 3, 51.0, 25.0),
+        (0.06, 3, 52.5, 25.0),
     ])
 
 
@@ -45,15 +45,34 @@ class ThreeFingerDragTest(unittest.TestCase):
         self.assertEqual(start_drag(self.machine), [ButtonDown()])
         self.assertIs(self.machine.state, State.DRAGGING)
 
+    def test_drag_waits_for_three_fingers_to_settle(self):
+        actions = feed(self.machine, [
+            (0.00, 3, 50.0, 25.0),
+            (0.01, 3, 53.0, 25.0),
+        ])
+        self.assertEqual(actions, [])
+        self.assertIs(self.machine.state, State.IDLE)
+        self.assertEqual(
+            self.machine.update(g.DRAG_SETTLE_S, 3, 53.5, 25.0), [ButtonDown()])
+
+    def test_settle_time_restarts_when_the_count_changes(self):
+        actions = feed(self.machine, [
+            (0.00, 3, 50.0, 25.0),
+            (0.04, 2, 50.0, 25.0),
+            (0.05, 3, 50.0, 25.0),
+            (0.06, 3, 53.0, 25.0),
+        ])
+        self.assertEqual(actions, [])
+
     def test_drag_moves_pointer_per_frame(self):
         start_drag(self.machine)
-        actions = self.machine.update(0.03, 3, 53.5, 25.5)
+        actions = self.machine.update(0.07, 3, 53.5, 25.5)
         self.assertEqual(actions, [Move(
             1.0 * g.POINTER_COUNTS_PER_MM, 0.5 * g.POINTER_COUNTS_PER_MM)])
 
     def test_stationary_frame_produces_no_move(self):
         start_drag(self.machine)
-        self.assertEqual(self.machine.update(0.03, 3, 52.5, 25.0), [])
+        self.assertEqual(self.machine.update(0.07, 3, 52.5, 25.0), [])
 
     def test_count_change_frame_produces_no_move(self):
         start_drag(self.machine)
@@ -147,6 +166,18 @@ class FourFingerSwipeTest(unittest.TestCase):
         ])
         self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
         self.assertIs(self.machine.state, State.SWIPE_DONE)
+
+    def test_fourth_finger_landing_late_does_not_click(self):
+        # Three fingers are already moving fast when the fourth lands 21 ms in.
+        actions = feed(self.machine, [
+            (0.000, 3, 60.0, 25.0),
+            (0.007, 3, 59.0, 25.0),
+            (0.014, 3, 58.0, 25.0),
+            (0.021, 4, 57.0, 25.0),
+            (0.028, 4, 50.0, 25.0),
+            (0.035, 4, 41.0, 25.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
 
     def test_swipe_right_switches_to_previous(self):
         actions = feed(self.machine, [

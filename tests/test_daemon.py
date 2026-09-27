@@ -62,7 +62,7 @@ class PumpTest(unittest.TestCase):
 
     def start_drag(self):
         self.pump(three_fingers_at(500), 0.00)
-        self.pump(three_fingers_at(530), 0.01)
+        self.pump(three_fingers_at(530), 0.06)
 
     def test_three_finger_motion_presses_the_button(self):
         self.start_drag()
