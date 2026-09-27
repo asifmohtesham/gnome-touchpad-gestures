@@ -92,6 +92,57 @@ class SwipeNeedsEveryFingerTest(unittest.TestCase):
         actions += touch(self.machine, second, start=0.05)
         self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
 
+    def test_travel_made_beside_resting_fingers_never_counts(self):
+        # Two fingers scroll 28 mm beside two resting ones; one resting finger
+        # lifts and lands again; then all four move 3.5 mm together.
+        beside = row(45.0, (0.0, 0.0), count=2, frames=15)
+        beside += [line((60.0, 40.0), (0.0, -200.0), frames=15),
+                   line((75.0, 40.0), (0.0, -200.0), frames=15)]
+        actions = touch(self.machine, beside)
+        ends = [path[-1] for path in beside]
+        self.machine.update(0.15, 3, 50.0, 30.0, fingers=tuple(ends[1:]))
+        together = [line(end, (0.0, -350.0), frames=2) for end in ends]
+        actions += touch(self.machine, together, start=0.16)
+        self.assertEqual(actions, [])
+
+    def test_contact_that_comes_and_goes_does_not_stop_a_swipe(self):
+        # A fifth contact appears and vanishes every 21 ms while four fingers
+        # travel 59 mm. Only the stretches without it count, which is half.
+        actions = []
+        t = 0.0
+        x = 80.0
+        for burst in range(14):
+            fingers = [(x - 15.0 * i, 25.0) for i in range(4)]
+            if burst % 2:
+                fingers.append((95.0, 45.0))
+            for _ in range(3):
+                centre = (sum(f[0] for f in fingers) / len(fingers),
+                          sum(f[1] for f in fingers) / len(fingers))
+                actions += self.machine.update(
+                    t, len(fingers), *centre, fingers=tuple(fingers))
+                t += 0.007
+                x -= 1.4
+                fingers = [(fx - 1.4, fy) for fx, fy in fingers[:4]] + fingers[4:]
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+
+    def test_finger_swapped_for_a_resting_one_stops_counting(self):
+        moving = row(25.0, (-200.0, 0.0), frames=2)
+        actions = touch(self.machine, moving)
+        ends = [path[-1] for path in moving]
+        # Same count, different fingers: the last one is replaced by a
+        # contact that then rests while the other three carry on. It lands
+        # ahead of the swipe, so measured from where the old finger was it
+        # would look as if it had moved a long way with the others.
+        paths = [line(end, (-200.0, 0.0), frames=20) for end in ends[:3]]
+        paths.append(line((5.0, 45.0), (0.0, 0.0), frames=20))
+        for i, positions in enumerate(zip(*paths)):
+            cx = sum(p[0] for p in positions) / 4
+            cy = sum(p[1] for p in positions) / 4
+            actions += self.machine.update(
+                0.02 + i * 0.01, 4, cx, cy, regrouped=(i == 0),
+                fingers=tuple(positions))
+        self.assertEqual(actions, [])
+
     def test_fingers_fanning_slightly_still_swipe(self):
         paths = [line((20.0, 40.0), (-30.0, -200.0)),
                  line((35.0, 40.0), (-10.0, -220.0)),

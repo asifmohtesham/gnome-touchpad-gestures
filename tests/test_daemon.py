@@ -1,9 +1,14 @@
+import contextlib
+import io
 import unittest
+from unittest import mock
 from collections import namedtuple
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures.daemon import Machines, is_touchpad, pump
+from gnome_x11_touchpad_gestures import daemon
+from gnome_x11_touchpad_gestures.daemon import (
+    Machines, is_single_touch_pad, is_touchpad, preference, pump)
 from gnome_x11_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, State
 from gnome_x11_touchpad_gestures.momentum import MomentumMachine
 from gnome_x11_touchpad_gestures.slots import SlotTracker
@@ -49,6 +54,144 @@ class IsTouchpadTest(unittest.TestCase):
     def test_single_touch_pad_is_not_a_touchpad(self):
         self.assertFalse(is_touchpad(
             {e.EV_ABS: [e.ABS_X, e.ABS_Y]}, [e.INPUT_PROP_POINTER]))
+
+
+BUS_USB, BUS_BLUETOOTH, BUS_I8042, BUS_I2C = 0x03, 0x05, 0x11, 0x18
+
+
+class PreferenceTest(unittest.TestCase):
+    def best(self, *candidates):
+        return min(candidates, key=lambda c: preference(*c))[0]
+
+    def test_event_numbers_are_compared_as_numbers(self):
+        self.assertEqual(
+            self.best(("/dev/input/event21", BUS_I2C),
+                      ("/dev/input/event3", BUS_I2C),
+                      ("/dev/input/event8", BUS_I2C)),
+            "/dev/input/event3")
+
+    def test_built_in_pad_beats_a_usb_one_with_a_lower_number(self):
+        self.assertEqual(
+            self.best(("/dev/input/event2", BUS_USB),
+                      ("/dev/input/event8", BUS_I2C)),
+            "/dev/input/event8")
+
+    def test_built_in_pad_beats_a_bluetooth_one(self):
+        self.assertEqual(
+            self.best(("/dev/input/event5", BUS_BLUETOOTH),
+                      ("/dev/input/event9", BUS_I8042)),
+            "/dev/input/event9")
+
+    def test_external_pad_is_used_when_it_is_the_only_one(self):
+        self.assertEqual(self.best(("/dev/input/event21", BUS_USB)),
+                         "/dev/input/event21")
+
+
+class FakeInfo:
+    def __init__(self, bustype):
+        self.bustype = bustype
+
+
+class FakeInputDevice:
+    devices = {}
+    opened = []
+
+    def __init__(self, path):
+        abs_codes, props, keys, bustype = FakeInputDevice.devices[path]
+        self.path = path
+        self.name = f"fake {path}"
+        self.info = FakeInfo(bustype)
+        self._capabilities = {e.EV_ABS: abs_codes, e.EV_KEY: keys}
+        self._props = props
+        self.closed = False
+        FakeInputDevice.opened.append(self)
+
+    def capabilities(self, absinfo=True):
+        return self._capabilities
+
+    def input_props(self):
+        return self._props
+
+    def close(self):
+        self.closed = True
+
+
+MT = [e.ABS_X, e.ABS_Y, e.ABS_MT_SLOT, e.ABS_MT_POSITION_X, e.ABS_MT_POSITION_Y]
+PAD_KEYS = [e.BTN_LEFT, e.BTN_TOOL_FINGER, e.BTN_TOUCH]
+MULTITOUCH = (MT, [e.INPUT_PROP_POINTER], PAD_KEYS)
+SINGLE_TOUCH = ([e.ABS_X, e.ABS_Y], [e.INPUT_PROP_POINTER], PAD_KEYS)
+KEYBOARD = ([], [], [e.KEY_A])
+
+
+class FindTouchpadTest(unittest.TestCase):
+    def setUp(self):
+        FakeInputDevice.opened = []
+        listing = mock.patch.object(
+            daemon.evdev, "list_devices",
+            side_effect=lambda: list(FakeInputDevice.devices))
+        opening = mock.patch.object(daemon.evdev, "InputDevice", FakeInputDevice)
+        listing.start()
+        opening.start()
+        self.addCleanup(listing.stop)
+        self.addCleanup(opening.stop)
+
+    def having(self, **devices):
+        FakeInputDevice.devices = {
+            f"/dev/input/{name}": spec for name, spec in devices.items()}
+
+    def left_open(self):
+        return [d.path for d in FakeInputDevice.opened if not d.closed]
+
+    def test_built_in_pad_is_chosen_over_one_plugged_in_later(self):
+        self.having(event21=MULTITOUCH + (BUS_USB,),
+                    event3=KEYBOARD + (BUS_I8042,),
+                    event8=MULTITOUCH + (BUS_I2C,))
+        self.assertEqual(daemon.find_touchpad().path, "/dev/input/event8")
+
+    def test_only_the_chosen_pad_is_left_open(self):
+        self.having(event21=MULTITOUCH + (BUS_USB,),
+                    event3=KEYBOARD + (BUS_I8042,),
+                    event8=MULTITOUCH + (BUS_I2C,))
+        daemon.find_touchpad()
+        self.assertEqual(self.left_open(), ["/dev/input/event8"])
+
+    def test_nothing_is_found_among_other_devices(self):
+        self.having(event3=KEYBOARD + (BUS_I8042,))
+        self.assertIsNone(daemon.find_touchpad())
+        self.assertEqual(self.left_open(), [])
+
+    def test_check_says_when_the_only_pad_cannot_tell_fingers_apart(self):
+        self.having(event8=SINGLE_TOUCH + (BUS_I8042,))
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(daemon.check(), daemon.EXIT_UNSUPPORTED)
+        self.assertIn("each finger", stderr.getvalue())
+        self.assertEqual(self.left_open(), [])
+
+    def test_check_still_reports_missing_access_when_nothing_is_readable(self):
+        self.having()
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(daemon.check(), daemon.EXIT_NO_ACCESS)
+
+    def test_the_three_exit_statuses_are_distinct(self):
+        self.assertEqual(
+            len({0, 1, 2, daemon.EXIT_NO_ACCESS, daemon.EXIT_UNSUPPORTED}), 5)
+
+
+class SingleTouchPadTest(unittest.TestCase):
+    def test_pad_without_slots_is_a_single_touch_pad(self):
+        abs_codes, props, keys = SINGLE_TOUCH
+        self.assertTrue(is_single_touch_pad(
+            {e.EV_ABS: abs_codes, e.EV_KEY: keys}, props))
+
+    def test_multitouch_pad_is_not(self):
+        abs_codes, props, keys = MULTITOUCH
+        self.assertFalse(is_single_touch_pad(
+            {e.EV_ABS: abs_codes, e.EV_KEY: keys}, props))
+
+    def test_mouse_is_not(self):
+        self.assertFalse(is_single_touch_pad(
+            {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
+            [e.INPUT_PROP_POINTER]))
 
 
 class PumpTest(unittest.TestCase):

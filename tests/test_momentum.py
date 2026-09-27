@@ -240,6 +240,19 @@ class InterruptTest(unittest.TestCase):
         self.assertIsNone(self.machine.next_deadline())
         self.assertEqual(self.machine.tick(lifted + 0.1), [])
 
+    def test_flick_straight_after_an_interrupted_drag_does_not_glide(self):
+        # The drag machine holds its button after an interrupt as after a lift.
+        t, _ = scroll(self.machine, 0.0, 200.0, count=3)
+        self.machine.interrupt(t + STEP)
+        flick(self.machine, 0.0, 200.0, start=t + STEP + 0.05)
+        self.assertIsNone(self.machine.next_deadline())
+
+    def test_interrupted_scroll_does_not_delay_the_next_glide(self):
+        t, _ = scroll(self.machine, 0.0, 200.0)
+        self.machine.interrupt(t + STEP)
+        flick(self.machine, 0.0, 200.0, start=t + STEP + 0.05)
+        self.assertIsNotNone(self.machine.next_deadline())
+
     def test_gliding_works_again_after_an_interrupt(self):
         t, _ = scroll(self.machine, 0.0, 200.0, count=3)
         self.machine.interrupt(t + STEP)

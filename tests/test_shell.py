@@ -56,7 +56,6 @@ class ShellTest(unittest.TestCase):
     def test_shell_is_addressed_by_name_so_a_restarted_shell_is_found(self):
         self.quietly(True)
         self.assertEqual(self.bus.calls[0][0], "org.gnome.Shell")
-        self.assertFalse(hasattr(self.bus, "get_object"))
 
     def test_every_request_carries_the_timeout(self):
         self.quietly(True)

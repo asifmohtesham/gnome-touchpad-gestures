@@ -192,12 +192,25 @@ the natural scrolling already enabled on this machine.
 
 ### Device discovery
 
-Enumerate `/dev/input/event*` and pick the first device that has
+Enumerate `/dev/input/event*` and consider every readable device that has
 `INPUT_PROP_POINTER`, `ABS_MT_SLOT` and `ABS_MT_POSITION_X`. Do not hard-code
-`event8`; event numbers can change between boots. If no device matches, exit
-with status 3 and a message naming the likely cause (udev rule not
-installed). Status 3 means "device access is missing" and nothing else, so
-the installer can tell it apart from a crash or a missing dependency.
+`event8`; event numbers can change between boots.
+
+Of those, use the built-in one: a device on USB or Bluetooth is taken only
+when there is no other, and among equals the lowest event number wins,
+compared as a number. The first version took the first path in text order,
+which puts `event21` before `event8`. That was harmless while the udev rule
+named one touchpad; once the rule covered every touchpad, a pad plugged in
+later would have displaced the built-in one. Devices not chosen are closed.
+
+If no device matches, exit with a status the installer can act on:
+
+| Status | Meaning |
+|---|---|
+| 3 | Device access is missing, and nothing else |
+| 4 | A touchpad is readable but reports one position, not each finger |
+
+Anything else is a crash or a missing dependency.
 
 ### Reading
 
@@ -299,7 +312,9 @@ nearly diagonal flicks glide on both axes; see below for why that changed.)
 
 `interrupt(t)` is what the daemon calls on `SYN_DROPPED`. For the gesture
 machine it is the same as every finger lifting. For momentum it is not a
-lift: the glide ends and nothing new may start.
+lift: the glide ends and nothing new may start. If the touch had three or
+more fingers, the wait of `SPOIL_LINGER_S` starts as it would at a lift,
+because the gesture machine holds its button from that moment.
 
 | Constant | Initial value | Meaning |
 |---|---|---|
@@ -392,8 +407,9 @@ WantedBy=graphical-session.target
 
 `install/install.sh` does the following and is safe to run repeatedly:
 
-1. Copy the udev rule to `/etc/udev/rules.d/` (the only step needing `sudo`).
-2. Reload udev rules and trigger the touchpad and uinput devices.
+1. Copy the udev rule to `/etc/udev/rules.d/`.
+2. Reload udev rules and trigger the touchpad and uinput devices. Steps 1
+   and 2 are the only ones that use `sudo`.
 3. Verify the current user can open both devices. If the check reports
    missing access (status 3), say that logging out and back in is required
    and stop. If it fails any other way, say so and do not suggest a re-login.
@@ -426,8 +442,19 @@ The cost of the copy is that a change to the code takes effect only when the
 installer is run again. The copy is replaced whole each time, so a module
 removed from the repository does not linger in the installed program.
 
-Before step 1 it confirms `python3-evdev` can be imported, so a missing
-dependency is reported before anything on the system is changed.
+The new copy is built beside the old one and swapped in only when complete.
+A copy that fails, on a full disk for example, leaves the working program
+where it was. The service is restarted only after the swap.
+
+The unit also sets `PYTHONPATH` to the same directory, because Python can be
+told, through `PYTHONSAFEPATH`, not to look in the working directory.
+
+Only a check that reports missing access (status 3) makes the installer ask
+for a password. A check that fails any other way, such as an error in code
+that was just edited, is reported as it is: `sudo` cannot fix it.
+
+Before step 1 it confirms `python3-evdev` and `python3-dbus` can be imported,
+so a missing dependency is reported before anything on the system is changed.
 
 `install/uninstall.sh` disables and removes the service and the installed
 program, removes the rule,
@@ -456,7 +483,7 @@ and does nothing else, which is how the tests reach them.
 | Four fingers travel up past `SWIPE_MM` | one `Overview(show=True)` |
 | Four fingers travel down past `SWIPE_MM` | one `Overview(show=False)` |
 | Four fingers travel diagonally | no actions |
-| GNOME Shell does not answer, or the bus is unreachable | logged, daemon carries on, reconnects next time |
+| GNOME Shell does not answer, or the bus is unreachable | logged, daemon carries on |
 | Fourth finger lands during a drag | `ButtonUp`, then swipe tracking |
 | One and two fingers, any motion | no actions |
 | Three fingers cross `DRAG_START_MM` before `DRAG_SETTLE_S` has passed | no `ButtonDown` until it has |
@@ -507,8 +534,16 @@ meaning, and repeating a swipe changes nothing.
 
 A four-finger swipe, sideways or vertical, counts only if every contact
 takes part: each must cover at least `TOGETHER_RATIO` of the motion they
-share, measured once they have travelled `SWIPE_TOGETHER_MM` together. A
-resting thumb or palm beside moving fingers is therefore not a swipe.
+share, measured once they have travelled `SWIPE_TOGETHER_MM` (2 mm)
+together. A resting thumb or palm beside moving fingers is therefore not a
+swipe.
+
+Travel counts towards the swipe only once the contacts that made it have
+passed that comparison. Whenever the set of contacts changes, the comparison
+starts again and travel not yet confirmed is dropped. So travel made beside
+resting contacts never counts, even if all the contacts move together
+afterwards, and a contact that comes and goes slows a swipe down without
+stopping it.
 
 The call goes to the shell's well-known bus name directly, not through a
 proxy object. A proxy first asks the shell to describe itself, with a wait of
@@ -517,9 +552,12 @@ shell it met, so it misses a shell that was restarted.
 
 `gnome_x11_touchpad_gestures/shell.py` holds that one call. It connects on first use, passes
 a timeout of `OVERVIEW_TIMEOUT_S` (0.5 s) because the call runs on the
-daemon's only thread, and treats every failure the same way: log it, drop
-the connection so the next request reconnects, and carry on. The overview is
-a convenience and must never take the drag handling down.
+daemon's only thread, and treats every failure the same way: log it and
+carry on. The overview is a convenience and must never take the drag
+handling down. A connection that could not be made is tried again at the
+next request. One that was made is kept: a session bus does not die inside a
+living session, and the bus library would hand back the same connection
+anyway.
 
 This is the one action that does not go through a virtual device, and the
 one part that works on GNOME only. It uses `python3-dbus`, which is already
@@ -528,5 +566,5 @@ installed.
 ## Out of scope
 
 Configuration file, animated workspace
-transitions, GUI or tray icon, multiple touchpads, external trackpads,
+transitions, GUI or tray icon, using more than one touchpad at a time,
 Wayland-specific handling.

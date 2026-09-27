@@ -60,11 +60,13 @@ The installer copies the program to `~/.local/share/gnome-x11-touchpad-gestures`
 service runs that copy. Two things follow:
 
 - **The repository can live anywhere.** Move it, rename it or delete it
-  afterwards; the service keeps running.
+  afterwards; the service keeps running. Keep a copy if you can, though:
+  uninstalling and the checks under Troubleshooting are run from it.
 - **Changing the code here does not change what runs** until you install
   again. After editing a file or pulling an update, run
-  `./install/install.sh`. It asks for your password only the first time, or
-  when the udev rule itself has changed.
+  `./install/install.sh`. It asks for your password only when there is
+  something for it to do: the first time, when the udev rule itself has
+  changed, or when access to the devices is missing.
 
 The commands below are all run from the repository directory.
 
@@ -77,20 +79,25 @@ If it says a re-login is needed, log out and in, then run it again.
 
 ### What the installer changes
 
-- **One udev rule**, `/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules`. It lets the
-  user sitting at the machine read its touchpads and create virtual input
+- **One udev rule**,
+  `/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules`. It lets the user
+  sitting at the machine read its touchpads and create virtual input
   devices, without joining the `input` group, which would expose the
-  keyboard too.
-- **One user service**, `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It
-  starts with your graphical session, and only if that session is X11.
+  keyboard too. A device that is a keyboard as well as a touchpad is left
+  alone for the same reason.
+- **One user service**,
+  `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It starts
+  with your graphical session, and only if that session is X11.
 - **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
 that through XTest, so this adds little there.
 
-If the machine has more than one touchpad, the daemon uses the first it
-finds.
+If the machine has more than one touchpad, the daemon uses the built-in
+one. A touchpad on USB or Bluetooth is used only when there is no other.
+Among equals it takes the lowest event number. The choice is made when the
+service starts.
 
 ## Uninstall
 
@@ -99,7 +106,7 @@ finds.
 ```
 
 This stops and removes the service and the installed program, removes the
-udev rule, makes udev look at the two devices afresh, and takes back the
+udev rule, makes udev look at the devices afresh, and takes back the
 access to the touchpad and `/dev/uinput` that the rule had granted. Removing
 the rule alone would leave that access in place until the next reboot. The
 repository itself is left where it is.
@@ -123,6 +130,12 @@ with the udev rule already in place, does not ask for a password.
 | `POINTER_COUNTS_PER_MM` | 12.0 | make the pointer faster while dragging |
 | `SWIPE_MM` | 15.0 | require a longer swipe, sideways or up and down |
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
+| `SWIPE_TOGETHER_MM` | 2.0 | compare the fingers over a longer stretch before a swipe counts |
+
+One more is in `gnome_x11_touchpad_gestures/motion.py`. `TOGETHER_RATIO`
+(0.5) is how much of the shared motion each finger must cover for a swipe or
+a scroll to count. Lower it if four-finger swipes fail when one finger lags;
+raise it if resting fingers are being taken for part of a gesture.
 
 Momentum scrolling has its own constants at the top of
 `gnome_x11_touchpad_gestures/momentum.py`:
@@ -148,9 +161,15 @@ journalctl --user -u gnome-x11-touchpad-gestures -n 20   # what did it say?
 python3 -m gnome_x11_touchpad_gestures.daemon --check
 ```
 
-`--check` exits 0 when both devices are accessible and 3 when access is
-missing. Any other status is a different problem, such as a missing
-`python3-evdev`, and logging out will not fix it.
+`--check` tests device access with the code in the repository, not the
+installed copy. Its exit status says what it found:
+
+| Status | Meaning |
+|---|---|
+| 0 | The touchpad and `/dev/uinput` are both accessible |
+| 3 | Access is missing. Run the installer; if it has been run, log out and in |
+| 4 | The touchpad reports one position, not each finger, and cannot be used |
+| anything else | A different problem, such as a missing Python package or an error in edited code. Logging out will not fix it |
 
 ## Tests
 
@@ -198,8 +217,9 @@ Run after installing or changing a tunable.
   the request when it wakes.
 - A four-finger swipe needs all the fingers to move. Contacts that rest on
   the pad while others move are not a swipe.
-- For a moment after a three-finger drag, a two-finger flick does not glide,
-  because the drag still holds its button.
+- For about a third of a second after any touch with three or more fingers,
+  a two-finger flick does not glide. A drag still holds its button for that
+  long, and the daemon does not tell a drag from a swipe or a tap here.
 - A glide lasts up to about two seconds. During that time it goes to
   whatever window is under the pointer, so it follows the pointer if an
   external mouse moves it, and pressing Ctrl zooms in apps that zoom on
