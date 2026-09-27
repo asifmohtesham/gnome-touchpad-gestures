@@ -48,6 +48,25 @@ class InstallScriptTest(unittest.TestCase):
         self.assertNotIn("Log out, log back in", result.stderr)
         self.assertIn("exit status 1", result.stderr)
 
+    def test_installer_refuses_to_run_as_root(self):
+        result = call("install.sh", "refuse_root", "0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not as root", result.stderr)
+        self.assertNotIn("stub:", result.stderr)
+
+    def test_installer_accepts_a_normal_user(self):
+        result = call("install.sh", "refuse_root", "1000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+
+    def test_root_is_refused_before_anything_else_happens(self):
+        # main must reach the guard before it looks at paths or calls sudo.
+        result = call("install.sh", "main_as", "0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not as root", result.stderr)
+        self.assertNotIn("stub:", result.stderr)
+        self.assertNotIn("must live at", result.stderr)
+
     def test_sourcing_the_installer_runs_nothing(self):
         result = call("install.sh", "true")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -56,6 +75,12 @@ class InstallScriptTest(unittest.TestCase):
 
 
 class UninstallScriptTest(unittest.TestCase):
+    def test_uninstaller_refuses_to_run_as_root(self):
+        result = call("uninstall.sh", "main_as", "0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not as root", result.stderr)
+        self.assertNotIn("stub:", result.stderr)
+
     def test_sourcing_the_uninstaller_runs_nothing(self):
         result = call("uninstall.sh", "true")
         self.assertEqual(result.returncode, 0, result.stderr)

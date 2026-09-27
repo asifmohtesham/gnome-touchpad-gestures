@@ -22,8 +22,12 @@ live at `~/finger-drag`.
 ~/finger-drag/install/install.sh
 ```
 
-The script asks for your password once to install a udev rule. If it says a
-re-login is needed, log out and in, then run it again.
+Run it as your normal user, not from a root shell and not with `sudo`. It
+installs a service for your own desktop session, and root has no session to
+install it into. The script asks for your password itself for the one step
+that needs it, and refuses to run as root.
+
+If it says a re-login is needed, log out and in, then run it again.
 
 ## Uninstall
 

@@ -22,7 +22,26 @@ explain_check_failure() {
     fi
 }
 
-main() {
+refuse_root() {
+    local uid="$1"
+    if [ "$uid" -eq 0 ]; then
+        echo "Run this as your normal user, not as root and not with sudo." >&2
+        echo "It installs a service for your own desktop session, and asks" >&2
+        echo "for your password itself for the one step that needs it." >&2
+        exit 1
+    fi
+}
+
+install_service() {
+    mkdir -p "$unit_dir"
+    install -m 0644 "$here/$unit" "$unit_dir/$unit"
+    systemctl --user daemon-reload
+    systemctl --user enable "$unit"
+    systemctl --user restart "$unit"
+}
+
+main_as() {
+    refuse_root "$1"
     if [ "$repo" != "$HOME/finger-drag" ]; then
         echo "finger-drag must live at $HOME/finger-drag (found $repo)." >&2
         exit 1
@@ -55,14 +74,14 @@ main() {
     fi
 
     echo "Installing user service..."
-    mkdir -p "$unit_dir"
-    install -m 0644 "$here/$unit" "$unit_dir/$unit"
-    systemctl --user daemon-reload
-    systemctl --user enable "$unit"
-    systemctl --user restart "$unit"
+    install_service
 
     sleep 1
     systemctl --user --no-pager --lines=5 status "$unit"
+}
+
+main() {
+    main_as "$(id -u)"
 }
 
 # Sourcing this file defines the functions without running anything.
