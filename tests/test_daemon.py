@@ -3,10 +3,10 @@ from collections import namedtuple
 
 from evdev import ecodes as e
 
-from finger_drag.daemon import Machines, is_touchpad, pump
-from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, State
-from finger_drag.momentum import MomentumMachine
-from finger_drag.slots import SlotTracker
+from gnome_x11_touchpad_gestures.daemon import Machines, is_touchpad, pump
+from gnome_x11_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, State
+from gnome_x11_touchpad_gestures.momentum import MomentumMachine
+from gnome_x11_touchpad_gestures.slots import SlotTracker
 
 Event = namedtuple("Event", "type code value")
 

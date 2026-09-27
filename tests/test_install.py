@@ -8,17 +8,20 @@ import subprocess
 import tempfile
 import unittest
 
-from finger_drag import daemon
+from gnome_x11_touchpad_gestures import daemon
 
 INSTALL = pathlib.Path(__file__).resolve().parent.parent / "install"
 REPO = INSTALL.parent
-PROGRAM = ".local/share/finger-drag"
+PROGRAM = ".local/share/gnome-x11-touchpad-gestures"
+PACKAGE = "gnome_x11_touchpad_gestures"
+UNIT = "gnome-x11-touchpad-gestures.service"
+RULE = "71-gnome-x11-touchpad-gestures.rules"
 
 
 # If a script ever did run when sourced, these keep it from touching the
 # system: privileged and service commands become failing stubs, and HOME
 # points at an empty directory.
-SANDBOX = tempfile.TemporaryDirectory(prefix="finger-drag-test-")
+SANDBOX = tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-")
 STUBS = pathlib.Path(SANDBOX.name) / "bin"
 STUBS.mkdir()
 for name in ("sudo", "systemctl"):
@@ -36,7 +39,7 @@ def recording_sandbox():
     Yields the home, a function that sources a script and runs a snippet of
     shell after it, and a function that returns the commands logged so far.
     """
-    with tempfile.TemporaryDirectory(prefix="finger-drag-test-") as sandbox:
+    with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as sandbox:
         home = pathlib.Path(sandbox) / "home"
         stubs = pathlib.Path(sandbox) / "bin"
         log = pathlib.Path(sandbox) / "log"
@@ -124,7 +127,7 @@ class ProgramIsCopiedTest(unittest.TestCase):
                 for path in pathlib.Path(directory).glob("*.py")}
 
     def test_unit_names_no_directory_chosen_by_the_user(self):
-        unit = (INSTALL / "finger-drag.service").read_text()
+        unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
         self.assertIn("WorkingDirectory=%h/" + PROGRAM + "\n", unit)
         self.assertNotIn("@REPO@", unit)
 
@@ -132,15 +135,15 @@ class ProgramIsCopiedTest(unittest.TestCase):
         with recording_sandbox() as (home, run, commands):
             result = run("install.sh", "install_service")
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(self.modules(home / PROGRAM / "finger_drag"),
-                             self.modules(REPO / "finger_drag"))
-            installed = (home / ".config/systemd/user/finger-drag.service")
+            self.assertEqual(self.modules(home / PROGRAM / "gnome_x11_touchpad_gestures"),
+                             self.modules(REPO / "gnome_x11_touchpad_gestures"))
+            installed = (home / ".config/systemd/user/gnome-x11-touchpad-gestures.service")
             self.assertEqual(installed.read_text(),
-                             (INSTALL / "finger-drag.service").read_text())
+                             (INSTALL / "gnome-x11-touchpad-gestures.service").read_text())
             self.assertEqual(commands(), [
                 "systemctl --user daemon-reload",
-                "systemctl --user enable finger-drag.service",
-                "systemctl --user restart finger-drag.service",
+                "systemctl --user enable gnome-x11-touchpad-gestures.service",
+                "systemctl --user restart gnome-x11-touchpad-gestures.service",
             ])
 
     def test_nothing_installed_mentions_where_the_repository_is(self):
@@ -156,11 +159,12 @@ class ProgramIsCopiedTest(unittest.TestCase):
             environment = {key: value for key, value in os.environ.items()
                            if key != "PYTHONPATH"}
             where = subprocess.run(
-                ["python3", "-c", "import finger_drag.daemon as d; print(d.__file__)"],
+                ["python3", "-c",
+                 f"import {PACKAGE}.daemon as d; print(d.__file__)"],
                 cwd=home / PROGRAM, env=environment,
                 capture_output=True, text=True, timeout=30)
             helped = subprocess.run(
-                ["python3", "-m", "finger_drag.daemon", "--help"],
+                ["python3", "-m", "gnome_x11_touchpad_gestures.daemon", "--help"],
                 cwd=home / PROGRAM, env=environment,
                 capture_output=True, text=True, timeout=30)
             self.assertEqual(where.returncode, 0, where.stderr)
@@ -170,17 +174,17 @@ class ProgramIsCopiedTest(unittest.TestCase):
     def test_installing_again_removes_a_module_that_no_longer_exists(self):
         with recording_sandbox() as (home, run, _):
             run("install.sh", "install_service")
-            stale = home / PROGRAM / "finger_drag" / "removed_upstream.py"
+            stale = home / PROGRAM / "gnome_x11_touchpad_gestures" / "removed_upstream.py"
             stale.write_text("raise SystemExit('stale')\n")
             run("install.sh", "install_service")
             self.assertFalse(stale.exists())
-            self.assertEqual(self.modules(home / PROGRAM / "finger_drag"),
-                             self.modules(REPO / "finger_drag"))
+            self.assertEqual(self.modules(home / PROGRAM / "gnome_x11_touchpad_gestures"),
+                             self.modules(REPO / "gnome_x11_touchpad_gestures"))
 
     def test_installer_does_not_insist_on_one_location(self):
         script = (INSTALL / "install.sh").read_text()
         self.assertNotIn("must live at", script)
-        self.assertNotIn("$HOME/finger-drag", script)
+        self.assertNotIn("$HOME/gnome-x11-touchpad-gestures", script)
         self.assertNotIn("render_unit", script)
 
     def test_uninstalling_removes_the_program(self):
@@ -191,7 +195,7 @@ class ProgramIsCopiedTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((home / PROGRAM).exists())
             self.assertFalse(
-                (home / ".config/systemd/user/finger-drag.service").exists())
+                (home / ".config/systemd/user/gnome-x11-touchpad-gestures.service").exists())
 
 
 class SudoOnlyWhenNeededTest(unittest.TestCase):
@@ -204,11 +208,11 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
         directory = home / "rules"
         directory.mkdir()
         if content is not None:
-            (directory / "71-finger-drag.rules").write_text(content)
+            (directory / "71-gnome-x11-touchpad-gestures.rules").write_text(content)
         return str(directory)
 
     def current_rule(self):
-        return (INSTALL / "71-finger-drag.rules").read_text()
+        return (INSTALL / "71-gnome-x11-touchpad-gestures.rules").read_text()
 
     def needs_sudo(self, content, access):
         with recording_sandbox() as (home, run, _):
@@ -237,8 +241,8 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
                          self.rules(home, self.current_rule()))
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual([c for c in commands() if c.startswith("sudo")], [])
-            self.assertIn("systemctl --user restart finger-drag.service", commands())
-            self.assertTrue((home / PROGRAM / "finger_drag" / "daemon.py").exists())
+            self.assertIn(f"systemctl --user restart {UNIT}", commands())
+            self.assertTrue((home / PROGRAM / PACKAGE / "daemon.py").exists())
 
     def test_first_install_installs_the_rule_with_sudo(self):
         with recording_sandbox() as (home, run, commands):
@@ -247,7 +251,7 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
                          self.ACCESS + 'rules_dir="$1"; main_as 1000', rules)
             self.assertEqual(result.returncode, 0, result.stderr)
             sudo = [c for c in commands() if c.startswith("sudo")]
-            self.assertIn(f"{rules}/71-finger-drag.rules", sudo[0])
+            self.assertIn(f"{rules}/71-gnome-x11-touchpad-gestures.rules", sudo[0])
             self.assertTrue(sudo[0].startswith("sudo install "))
             self.assertIn("sudo udevadm control --reload", sudo)
             self.assertIn("sudo udevadm settle", sudo)
@@ -264,7 +268,7 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
 
 class InstalledFilesTest(unittest.TestCase):
     def test_rule_matches_any_touchpad_so_nobody_has_to_edit_it(self):
-        rule = (INSTALL / "71-finger-drag.rules").read_text()
+        rule = (INSTALL / "71-gnome-x11-touchpad-gestures.rules").read_text()
         active = [line for line in rule.splitlines()
                   if line and not line.startswith("#")]
         self.assertEqual(len(active), 2)
@@ -272,7 +276,7 @@ class InstalledFilesTest(unittest.TestCase):
         self.assertNotIn("ATTRS{name}", rule)
 
     def test_service_runs_in_an_x11_session_only(self):
-        unit = (INSTALL / "finger-drag.service").read_text()
+        unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
         self.assertIn("ConditionEnvironment=XDG_SESSION_TYPE=x11", unit)
 
     def test_installer_names_each_missing_python_package(self):
@@ -310,7 +314,7 @@ class UninstallScriptTest(unittest.TestCase):
         result, log = record("uninstall.sh", "main_as", "1000")
         self.assertEqual(result.returncode, 0, result.stderr)
 
-        removed = self.position(log, "sudo rm -f", "71-finger-drag.rules")
+        removed = self.position(log, "sudo rm -f", "71-gnome-x11-touchpad-gestures.rules")
         reloaded = self.position(log, "sudo udevadm control --reload")
         uinput = self.position(log, "sudo udevadm trigger", "uinput")
         touchpad = self.position(log, "sudo udevadm trigger", "ID_INPUT_TOUCHPAD=1")

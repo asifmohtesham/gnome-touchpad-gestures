@@ -35,5 +35,5 @@ class Shell:
             # Whatever went wrong, the overview is a convenience. It must
             # never take the drag handling down with it.
             verb = "open" if show else "close"
-            print(f"finger-drag: could not {verb} the overview: {error}",
+            print(f"gnome-x11-touchpad-gestures: could not {verb} the overview: {error}",
                   file=sys.stderr, flush=True)

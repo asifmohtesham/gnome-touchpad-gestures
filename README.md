@@ -4,9 +4,9 @@ macOS-style touchpad gestures for GNOME on X11: three-finger drag,
 four-finger swipes and momentum scrolling.
 
 GNOME has touchpad gestures on Wayland but none on X11. This fills the gap
-with one small unprivileged Python daemon, called `finger-drag`. It reads
-the touchpad and writes to three virtual input devices. It never grabs the
-touchpad, so normal pointing, scrolling and tapping are untouched.
+with one small unprivileged Python daemon. It reads the touchpad and writes
+to three virtual input devices. It never grabs the touchpad, so normal
+pointing, scrolling and tapping are untouched.
 
 | Gesture | Result |
 |---|---|
@@ -18,7 +18,7 @@ touchpad, so normal pointing, scrolling and tapping are untouched.
 | Two fingers, flick and lift | The page keeps gliding and slows to a stop |
 | Any touch during a glide | The glide stops at once |
 
-Design: `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
+Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
 ## Status
 
@@ -56,7 +56,7 @@ cd gnome-x11-touchpad-gestures
 ./install/install.sh
 ```
 
-The installer copies the program to `~/.local/share/finger-drag`, and the
+The installer copies the program to `~/.local/share/gnome-x11-touchpad-gestures`, and the
 service runs that copy. Two things follow:
 
 - **The repository can live anywhere.** Move it, rename it or delete it
@@ -77,13 +77,13 @@ If it says a re-login is needed, log out and in, then run it again.
 
 ### What the installer changes
 
-- **One udev rule**, `/etc/udev/rules.d/71-finger-drag.rules`. It lets the
+- **One udev rule**, `/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules`. It lets the
   user sitting at the machine read its touchpads and create virtual input
   devices, without joining the `input` group, which would expose the
   keyboard too.
-- **One user service**, `~/.config/systemd/user/finger-drag.service`. It
+- **One user service**, `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It
   starts with your graphical session, and only if that session is X11.
-- **The program**, copied to `~/.local/share/finger-drag`.
+- **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
@@ -111,7 +111,7 @@ uninstaller takes that away too until the next reboot.
 
 ## Tuning
 
-Edit the constants at the top of `finger_drag/gestures.py`, then run
+Edit the constants at the top of `gnome_x11_touchpad_gestures/gestures.py`, then run
 `./install/install.sh` to install the change. It restarts the service and,
 with the udev rule already in place, does not ask for a password.
 
@@ -125,7 +125,7 @@ with the udev rule already in place, does not ask for a password.
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
 
 Momentum scrolling has its own constants at the top of
-`finger_drag/momentum.py`:
+`gnome_x11_touchpad_gestures/momentum.py`:
 
 | Constant | Default | Raise it to... |
 |---|---|---|
@@ -143,9 +143,9 @@ the touchpad. To change the shape of the slowdown itself, edit
 ## Troubleshooting
 
 ```bash
-systemctl --user status finger-drag      # is it running?
-journalctl --user -u finger-drag -n 20   # what did it say?
-python3 -m finger_drag.daemon --check
+systemctl --user status gnome-x11-touchpad-gestures      # is it running?
+journalctl --user -u gnome-x11-touchpad-gestures -n 20   # what did it say?
+python3 -m gnome_x11_touchpad_gestures.daemon --check
 ```
 
 `--check` exits 0 when both devices are accessible and 3 when access is
@@ -169,7 +169,7 @@ Run after installing or changing a tunable.
 - [ ] Two-finger scroll and one-finger pointing are unchanged.
 - [ ] Four-finger swipe left and right switches workspace, once per swipe.
 - [ ] Suspend and resume; gestures work again within a few seconds.
-- [ ] `systemctl --user stop finger-drag` mid-drag releases the button.
+- [ ] `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
 - [ ] Four-finger swipe up opens the overview; swiping up again leaves it
       open.
 - [ ] Four-finger swipe down closes the overview.
@@ -215,7 +215,7 @@ Run after installing or changing a tunable.
   pad to end it sooner.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
   natural scrolling is on for the touchpad and off for mice. If yours
-  differ, set `NATURAL_SCROLL` in `finger_drag/momentum.py`.
+  differ, set `NATURAL_SCROLL` in `gnome_x11_touchpad_gestures/momentum.py`.
 - X applies its mouse acceleration to the virtual pointer, so drag speed
   also depends on the mouse speed set in GNOME Settings.
   `POINTER_COUNTS_PER_MM` is tuned with that in place.

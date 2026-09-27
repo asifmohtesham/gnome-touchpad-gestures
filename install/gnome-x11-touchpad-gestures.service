@@ -6,11 +6,11 @@ ConditionEnvironment=XDG_SESSION_TYPE=x11
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m finger_drag.daemon
+ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
 # install.sh copies the program here. %h is the home directory, worked out
 # by systemd itself, so nothing about where the repository lives, or what
 # its path contains, ends up in this file.
-WorkingDirectory=%h/.local/share/finger-drag
+WorkingDirectory=%h/.local/share/gnome-x11-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 

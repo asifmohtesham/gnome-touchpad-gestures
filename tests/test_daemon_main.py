@@ -11,9 +11,13 @@ from unittest import mock
 
 from evdev import ecodes as e
 
-from finger_drag import daemon
-from finger_drag.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
-from finger_drag.output import WORKSPACE_KEYS
+from gnome_x11_touchpad_gestures import daemon
+from gnome_x11_touchpad_gestures.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
+from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS
+
+POINTER = "gnome-x11-touchpad-gestures pointer"
+KEYBOARD = "gnome-x11-touchpad-gestures keyboard"
+WHEEL = "gnome-x11-touchpad-gestures wheel"
 
 Event = namedtuple("Event", "type code value")
 AbsInfo = namedtuple("AbsInfo", "value min max fuzz flat resolution")
@@ -206,17 +210,17 @@ class MainTest(unittest.TestCase):
 
     def button_values(self):
         return [value for etype, code, value in
-                self.devices["finger-drag pointer"].written
+                self.devices[POINTER].written
                 if etype == e.EV_KEY and code == e.BTN_LEFT]
 
     def assert_everything_released_and_closed(self, touchpad):
         self.assertEqual(self.button_values()[-1], 0)
         self.assertEqual(
-            self.devices["finger-drag keyboard"].written[-len(WORKSPACE_KEYS):],
+            self.devices[KEYBOARD].written[-len(WORKSPACE_KEYS):],
             [(e.EV_KEY, key, 0) for key in WORKSPACE_KEYS])
-        self.assertTrue(self.devices["finger-drag pointer"].closed)
-        self.assertTrue(self.devices["finger-drag keyboard"].closed)
-        self.assertTrue(self.devices["finger-drag wheel"].closed)
+        self.assertTrue(self.devices[POINTER].closed)
+        self.assertTrue(self.devices[KEYBOARD].closed)
+        self.assertTrue(self.devices[WHEEL].closed)
         self.assertTrue(touchpad.closed)
 
     def test_button_is_released_by_the_deadline_with_no_further_events(self):
@@ -253,7 +257,7 @@ class MainTest(unittest.TestCase):
 
     def wheel_units(self):
         return [value for etype, code, value in
-                self.devices["finger-drag wheel"].written
+                self.devices[WHEEL].written
                 if etype == e.EV_REL and code == e.REL_WHEEL_HI_RES]
 
     def test_two_finger_flick_glides_after_the_lift(self):
@@ -309,39 +313,36 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.wheel_units(), [])
 
     def test_one_device_failing_to_close_does_not_stop_the_others(self):
-        FakeUInput.cannot_be_closed = {"finger-drag pointer"}
+        FakeUInput.cannot_be_closed = {POINTER}
         touchpad = FakeTouchpad([interrupt])
 
         with self.assertRaises(OSError), \
                 contextlib.redirect_stderr(io.StringIO()):
             self.run_main(touchpad)
 
-        self.assertEqual(self.closed(), {
-            "finger-drag pointer", "finger-drag keyboard", "finger-drag wheel"})
+        self.assertEqual(self.closed(), {POINTER, KEYBOARD, WHEEL})
         self.assertTrue(touchpad.closed)
 
     def test_failing_to_release_does_not_stop_the_devices_closing(self):
-        FakeUInput.cannot_be_written = {"finger-drag keyboard"}
+        FakeUInput.cannot_be_written = {KEYBOARD}
         touchpad = FakeTouchpad([interrupt])
 
         with self.assertRaises(OSError), \
                 contextlib.redirect_stderr(io.StringIO()):
             self.run_main(touchpad)
 
-        self.assertEqual(self.closed(), {
-            "finger-drag pointer", "finger-drag keyboard", "finger-drag wheel"})
+        self.assertEqual(self.closed(), {POINTER, KEYBOARD, WHEEL})
         self.assertTrue(touchpad.closed)
 
     def test_device_that_cannot_be_created_leaves_nothing_open(self):
-        FakeUInput.cannot_be_created = {"finger-drag wheel"}
+        FakeUInput.cannot_be_created = {WHEEL}
         touchpad = FakeTouchpad([])
 
         with self.assertRaises(OSError), \
                 contextlib.redirect_stderr(io.StringIO()):
             self.run_main(touchpad)
 
-        self.assertEqual(
-            self.closed(), {"finger-drag pointer", "finger-drag keyboard"})
+        self.assertEqual(self.closed(), {POINTER, KEYBOARD})
         self.assertTrue(touchpad.closed)
 
     def test_fingers_down_at_startup_do_not_start_a_drag(self):

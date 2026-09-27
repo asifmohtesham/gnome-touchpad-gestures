@@ -2,7 +2,7 @@ import contextlib
 import io
 import unittest
 
-from finger_drag.shell import OVERVIEW_TIMEOUT_S, Shell
+from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S, Shell
 
 
 class FakeBus:

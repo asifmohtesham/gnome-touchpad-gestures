@@ -12,11 +12,11 @@ import time
 import evdev
 from evdev import ecodes as e
 
-from finger_drag.gestures import GestureMachine
-from finger_drag.momentum import MomentumMachine
-from finger_drag.output import WORKSPACE_KEYS, Output
-from finger_drag.shell import Shell
-from finger_drag.slots import (
+from gnome_x11_touchpad_gestures.gestures import GestureMachine
+from gnome_x11_touchpad_gestures.momentum import MomentumMachine
+from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS, Output
+from gnome_x11_touchpad_gestures.shell import Shell
+from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
@@ -24,12 +24,12 @@ UINPUT_PATH = "/dev/uinput"
 # "log out and back in" apart from every other failure.
 EXIT_NO_ACCESS = 3
 NO_TOUCHPAD = (
-    "finger-drag: no accessible touchpad found. Is "
-    "/etc/udev/rules.d/71-finger-drag.rules installed? "
+    "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
+    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 NO_UINPUT = (
-    f"finger-drag: cannot write to {UINPUT_PATH}. Is "
-    "/etc/udev/rules.d/71-finger-drag.rules installed? "
+    f"gnome-x11-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
+    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 
 
@@ -147,7 +147,7 @@ def _terminate(signum, frame):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="finger-drag",
+        prog="gnome-x11-touchpad-gestures",
         description="Three-finger drag, four-finger workspace switch "
                     "and momentum scrolling.")
     parser.add_argument(
@@ -178,20 +178,20 @@ def main(argv=None) -> int:
 
         pointer = create(
             {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
-            "finger-drag pointer")
+            "gnome-x11-touchpad-gestures pointer")
         keyboard = create(
-            {e.EV_KEY: list(WORKSPACE_KEYS)}, "finger-drag keyboard")
+            {e.EV_KEY: list(WORKSPACE_KEYS)}, "gnome-x11-touchpad-gestures keyboard")
         # The motion axes and buttons are never used; they are what makes
         # libinput accept the device as a mouse and listen to its wheel.
         wheel = create(
             {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
                         e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
              e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
-            "finger-drag wheel")
+            "gnome-x11-touchpad-gestures wheel")
         output = Output(pointer, keyboard, wheel, Shell())
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
-        print(f"finger-drag: listening on {device.path} ({device.name})",
+        print(f"gnome-x11-touchpad-gestures: listening on {device.path} ({device.name})",
               flush=True)
         try:
             run(device, make_tracker(device),
