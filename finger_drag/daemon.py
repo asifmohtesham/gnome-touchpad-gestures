@@ -17,6 +17,9 @@ from finger_drag.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
+# Distinct from a crash (1) or a usage error (2) so that install.sh can tell
+# "log out and back in" apart from every other failure.
+EXIT_NO_ACCESS = 3
 NO_TOUCHPAD = (
     "finger-drag: no accessible touchpad found. Is "
     "/etc/udev/rules.d/71-finger-drag.rules installed? "
@@ -52,11 +55,17 @@ def make_tracker(device) -> SlotTracker:
     return SlotTracker(
         units_per_mm(x.min, x.max, x.resolution, FALLBACK_WIDTH_MM),
         units_per_mm(y.min, y.max, y.resolution, FALLBACK_HEIGHT_MM),
-        current_slot=device.absinfo(e.ABS_MT_SLOT).value,
+        *snapshot(device),
     )
 
 
-def pump(events, current_slot, tracker, machine, output, now: float) -> None:
+def snapshot(device) -> tuple[int, bool]:
+    """The device's current slot, and whether any finger is on the pad."""
+    return (device.absinfo(e.ABS_MT_SLOT).value,
+            e.BTN_TOUCH in device.active_keys())
+
+
+def pump(events, read_state, tracker, machine, output, now: float) -> None:
     for event in events:
         if event.type == e.EV_SYN and event.code == e.SYN_DROPPED:
             # The kernel dropped events, so slot state is stale. End whatever
@@ -68,23 +77,22 @@ def pump(events, current_slot, tracker, machine, output, now: float) -> None:
             # The rest of the interrupted packet belongs to slots we can no
             # longer identify, so it is discarded up to the next report.
             if event.type == e.EV_SYN and event.code == e.SYN_REPORT:
-                tracker.reset(current_slot())
+                tracker.reset(*read_state())
             continue
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:
-            output.emit(machine.update(now, frame.count, frame.cx, frame.cy))
+            output.emit(machine.update(
+                now, frame.count, frame.cx, frame.cy, frame.regrouped))
 
 
 def run(device, tracker, machine, output, clock=time.monotonic) -> None:
-    def current_slot() -> int:
-        return device.absinfo(e.ABS_MT_SLOT).value
-
     while True:
         deadline = machine.next_deadline()
         timeout = None if deadline is None else max(0.0, deadline - clock())
         ready, _, _ = select.select([device.fd], [], [], timeout)
         if ready:
-            pump(device.read(), current_slot, tracker, machine, output, clock())
+            pump(device.read(), lambda: snapshot(device), tracker, machine,
+                 output, clock())
         else:
             output.emit(machine.tick(clock()))
 
@@ -93,12 +101,12 @@ def check() -> int:
     device = find_touchpad()
     if device is None:
         print(NO_TOUCHPAD, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     print(f"touchpad: {device.path} ({device.name})")
     device.close()
     if not os.access(UINPUT_PATH, os.W_OK):
         print(NO_UINPUT, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     print(f"uinput: {UINPUT_PATH} writable")
     return 0
 
@@ -121,10 +129,10 @@ def main(argv=None) -> int:
     device = find_touchpad()
     if device is None:
         print(NO_TOUCHPAD, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     if not os.access(UINPUT_PATH, os.W_OK):
         print(NO_UINPUT, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
 
     signal.signal(signal.SIGTERM, _terminate)
     pointer = evdev.UInput(

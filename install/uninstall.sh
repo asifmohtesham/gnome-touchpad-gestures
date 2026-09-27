@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Removes finger-drag and revokes the device access it was given.
+set -euo pipefail
+
+rule="/etc/udev/rules.d/71-finger-drag.rules"
+unit="finger-drag.service"
+unit_file="$HOME/.config/systemd/user/$unit"
+
+touchpad_nodes() {
+    local path
+    udevadm trigger --dry-run --verbose --subsystem-match=input \
+        --sysname-match='event*' --property-match=ID_INPUT_TOUCHPAD=1 |
+    while read -r path; do
+        echo "/dev/$(udevadm info --query=name --path="$path")"
+    done
+}
+
+main() {
+    echo "Stopping and removing the user service..."
+    systemctl --user disable --now "$unit" 2>/dev/null || true
+    rm -f "$unit_file"
+    systemctl --user daemon-reload
+
+    echo "Removing udev rule and device access (needs sudo)..."
+    sudo rm -f "$rule"
+    sudo udevadm control --reload
+    # Removing the rule does not take back access that was already granted.
+    local node
+    for node in /dev/uinput $(touchpad_nodes); do
+        sudo setfacl -x "u:$USER" "$node"
+    done
+
+    echo "finger-drag removed. The repository at ~/finger-drag was left in place."
+}
+
+# Sourcing this file defines the functions without running anything.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    main "$@"
+fi

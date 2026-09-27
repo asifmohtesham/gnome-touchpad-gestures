@@ -25,8 +25,9 @@ class FakeTouchpad:
     path = "/dev/input/fake"
     name = "fake touchpad"
 
-    def __init__(self, steps):
+    def __init__(self, steps, touching=False):
         self.fd, self._write_fd = os.pipe()
+        self._touching = touching
         self._steps = []
         self.closed = False
         for step in steps:
@@ -40,6 +41,9 @@ class FakeTouchpad:
         if code == e.ABS_MT_SLOT:
             return AbsInfo(0, 0, 4, 0, 0, 0)
         return AbsInfo(0, 0, 1300, 0, 0, 10)
+
+    def active_keys(self):
+        return [e.BTN_TOUCH] if self._touching else []
 
     def read(self):
         os.read(self.fd, 1)
@@ -175,9 +179,24 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.button_values(), [1, 0])
         self.assert_everything_released_and_closed(touchpad)
 
+    def test_fingers_down_at_startup_do_not_start_a_drag(self):
+        touchpad = FakeTouchpad(
+            [land, move_after_settling, interrupt], touching=True)
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        # Never pressed; the only write is the release on shutdown.
+        self.assertEqual(self.button_values(), [0])
+
+    def test_check_reports_missing_access_with_its_own_exit_status(self):
+        with mock.patch.object(daemon, "find_touchpad", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(daemon.main(["--check"]), daemon.EXIT_NO_ACCESS)
+        self.assertNotIn(daemon.EXIT_NO_ACCESS, (0, 1, 2))
+
     def test_no_touchpad_exits_with_an_error_and_creates_no_devices(self):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            self.assertEqual(self.run_main(None), 1)
+            self.assertEqual(self.run_main(None), daemon.EXIT_NO_ACCESS)
         self.assertIn("no accessible touchpad", stderr.getvalue())
         self.assertEqual(self.devices, {})
 

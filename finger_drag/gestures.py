@@ -78,9 +78,10 @@ class GestureMachine:
             return [ButtonUp()]
         return []
 
-    def update(self, t: float, count: int, cx: float, cy: float) -> list[Action]:
+    def update(self, t: float, count: int, cx: float, cy: float,
+               regrouped: bool = False) -> list[Action]:
         actions = self.tick(t)
-        dx, dy = self._delta(t, count, cx, cy)
+        dx, dy = self._delta(t, count, cx, cy, regrouped)
         if self.state is State.IDLE:
             actions += self._idle(t, count, dx, dy)
         elif self.state is State.DRAGGING:
@@ -93,10 +94,11 @@ class GestureMachine:
             actions += self._swipe_done(count)
         return actions
 
-    def _delta(self, t: float, count: int, cx: float, cy: float) -> tuple[float, float]:
+    def _delta(self, t: float, count: int, cx: float, cy: float,
+               regrouped: bool) -> tuple[float, float]:
         # The centroid jumps whenever a different set of fingers is averaged,
         # so a frame where the count changed carries no usable motion.
-        changed = count != self._count
+        changed = count != self._count or regrouped
         if changed:
             self._count_since = t
         previous = self._ref

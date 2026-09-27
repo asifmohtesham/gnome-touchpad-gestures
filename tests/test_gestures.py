@@ -83,6 +83,15 @@ class ThreeFingerDragTest(unittest.TestCase):
             self.machine.update(0.61, 3, 21.0, 10.0),
             [Move(1.0 * g.POINTER_COUNTS_PER_MM, 0.0)])
 
+    def test_regrouped_frame_produces_no_move(self):
+        start_drag(self.machine)
+        self.assertEqual(
+            self.machine.update(0.50, 3, 20.0, 10.0, regrouped=True), [])
+        self.assertIs(self.machine.state, State.DRAGGING)
+        self.assertEqual(
+            self.machine.update(0.51, 3, 21.0, 10.0),
+            [Move(1.0 * g.POINTER_COUNTS_PER_MM, 0.0)])
+
     def test_button_released_after_deadline(self):
         start_drag(self.machine)
         self.assertEqual(self.machine.update(1.0, 0, 0.0, 0.0), [])
@@ -218,6 +227,17 @@ class FourFingerSwipeTest(unittest.TestCase):
             SwitchWorkspace(Direction.NEXT),
             SwitchWorkspace(Direction.PREVIOUS),
         ])
+
+    def test_regrouped_frame_adds_no_swipe_travel(self):
+        feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 52.0, 25.0),
+        ])
+        self.assertEqual(
+            self.machine.update(0.02, 4, 30.0, 25.0, regrouped=True), [])
+        self.assertEqual(
+            self.machine.update(0.03, 4, 22.0, 25.0),
+            [SwitchWorkspace(Direction.NEXT)])
 
     def test_vertical_swipe_produces_nothing(self):
         actions = feed(self.machine, [
