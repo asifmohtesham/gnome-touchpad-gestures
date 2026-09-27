@@ -114,6 +114,7 @@ ButtonDown()              # press virtual left button
 ButtonUp()                # release virtual left button
 Move(dx: float, dy: float)  # relative pointer motion, in output counts
 SwitchWorkspace(direction)  # Direction.NEXT or Direction.PREVIOUS
+Overview(show: bool)        # open or close the Activities overview
 ```
 
 ### States
@@ -137,6 +138,8 @@ RELEASE_WAIT
 SWIPE_TRACKING
   |dx| >= SWIPE_MM and |dx| >= SWIPE_AXIS_RATIO * |dy|
                               -> SwitchWorkspace, SWIPE_DONE
+  |dy| >= SWIPE_MM and |dy| >= SWIPE_AXIS_RATIO * |dx|
+                              -> Overview, SWIPE_DONE
   count == 0                  -> IDLE
 
 SWIPE_DONE
@@ -168,7 +171,7 @@ Module-level constants at the top of `gestures.py`:
 | `DRAG_SETTLE_S` | 0.05 | How long the count must stay at three before a drag can start. Keeps a four-finger swipe from clicking as the fingers land. |
 | `DRAG_RELEASE_S` | 0.3 | How long the button stays held after fingers lift. |
 | `POINTER_COUNTS_PER_MM` | 12.0 | Pointer speed during a drag. |
-| `SWIPE_MM` | 15.0 | Sideways travel needed to switch workspace. |
+| `SWIPE_MM` | 15.0 | Travel needed for a four-finger swipe, sideways or vertical. |
 | `SWIPE_AXIS_RATIO` | 1.5 | How much horizontal travel must exceed vertical. |
 
 ### Swipe direction
@@ -227,6 +230,7 @@ Two virtual devices, so that libinput classifies each one cleanly:
 | `Move` | `REL_X`, `REL_Y`, with fractional remainders carried to the next frame |
 | `SwitchWorkspace(NEXT)` | press Ctrl, Alt, Right; release in reverse order |
 | `SwitchWorkspace(PREVIOUS)` | press Ctrl, Alt, Left; release in reverse order |
+| `Overview(show)` | no device; sets GNOME Shell's `OverviewActive` over D-Bus |
 
 ### Failure handling
 
@@ -370,7 +374,10 @@ and does nothing else, which is how the tests reach them.
 | Four fingers travel left past `SWIPE_MM` | one `SwitchWorkspace(NEXT)` |
 | Four fingers travel right past `SWIPE_MM` | one `SwitchWorkspace(PREVIOUS)` |
 | Four fingers keep moving after a switch | no second switch until full lift |
-| Four fingers travel vertically | no actions |
+| Four fingers travel up past `SWIPE_MM` | one `Overview(show=True)` |
+| Four fingers travel down past `SWIPE_MM` | one `Overview(show=False)` |
+| Four fingers travel diagonally | no actions |
+| GNOME Shell does not answer, or the bus is unreachable | logged, daemon carries on, reconnects next time |
 | Fourth finger lands during a drag | `ButtonUp`, then swipe tracking |
 | One and two fingers, any motion | no actions |
 | Three fingers cross `DRAG_START_MM` before `DRAG_SETTLE_S` has passed | no `ButtonDown` until it has |
@@ -407,8 +414,30 @@ Run with `python3 -m unittest discover -s tests`.
 - X applies its mouse acceleration profile to the virtual pointer.
   `POINTER_COUNTS_PER_MM` is tuned by feel with that in place.
 
+## Overview gesture (added 2026-09-27)
+
+A four-finger swipe up opens GNOME's Activities overview, the view that shows
+the windows and the workspace strip. A swipe down closes it. This was listed
+as out of scope in the first version of this spec.
+
+The only key that opens the overview is a tap of `Super`, and a key can only
+toggle: swiping up with the overview already open would close it. So the
+daemon sets the state it wants instead, through the `OverviewActive`
+property of `org.gnome.Shell` on the session bus. Each direction then has one
+meaning, and repeating a swipe changes nothing.
+
+`finger_drag/shell.py` holds that one call. It connects on first use, passes
+a timeout of `OVERVIEW_TIMEOUT_S` (0.5 s) because the call runs on the
+daemon's only thread, and treats every failure the same way: log it, drop
+the connection so the next request reconnects, and carry on. The overview is
+a convenience and must never take the drag handling down.
+
+This is the one action that does not go through a virtual device, and the
+one part that works on GNOME only. It uses `python3-dbus`, which is already
+installed.
+
 ## Out of scope
 
-Configuration file, vertical four-finger gestures, animated workspace
+Configuration file, animated workspace
 transitions, GUI or tray icon, multiple touchpads, external trackpads,
 Wayland-specific handling.

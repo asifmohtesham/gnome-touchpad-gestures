@@ -3,7 +3,8 @@ import unittest
 
 from finger_drag import gestures as g
 from finger_drag.gestures import (
-    ButtonDown, ButtonUp, Direction, GestureMachine, Move, State, SwitchWorkspace)
+    ButtonDown, ButtonUp, Direction, GestureMachine, Move, Overview, State,
+    SwitchWorkspace)
 
 
 def feed(machine, frames):
@@ -248,14 +249,69 @@ class FourFingerSwipeTest(unittest.TestCase):
             self.machine.update(0.03, 4, 22.0, 25.0),
             [SwitchWorkspace(Direction.NEXT)])
 
-    def test_vertical_swipe_produces_nothing(self):
+    def test_swipe_up_opens_the_overview(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 40.0),
+            (0.01, 4, 60.0, 32.0),
+            (0.02, 4, 60.0, 24.0),
+        ])
+        self.assertEqual(actions, [Overview(show=True)])
+        self.assertIs(self.machine.state, State.SWIPE_DONE)
+
+    def test_swipe_down_closes_the_overview(self):
         actions = feed(self.machine, [
             (0.00, 4, 60.0, 10.0),
+            (0.01, 4, 60.0, 18.0),
+            (0.02, 4, 60.0, 26.0),
+        ])
+        self.assertEqual(actions, [Overview(show=False)])
+
+    def test_vertical_travel_below_threshold_produces_nothing(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 40.0),
+            (0.01, 4, 60.0, 26.0),
+            (0.02, 0, 0.0, 0.0),
+        ])
+        self.assertEqual(actions, [])
+
+    def test_only_one_overview_action_per_swipe(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 50.0),
             (0.01, 4, 60.0, 30.0),
-            (0.02, 4, 60.0, 50.0),
+            (0.02, 4, 60.0, 10.0),
+            (0.03, 4, 60.0, 45.0),
+        ])
+        self.assertEqual(actions, [Overview(show=True)])
+
+    def test_swipe_up_cannot_also_switch_workspace(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 50.0),
+            (0.01, 4, 60.0, 30.0),
+            (0.02, 4, 20.0, 30.0),
+        ])
+        self.assertEqual(actions, [Overview(show=True)])
+
+    def test_diagonal_swipe_is_neither(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 40.0),
+            (0.01, 4, 40.0, 20.0),
         ])
         self.assertEqual(actions, [])
         self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_steep_but_not_straight_swipe_up_produces_nothing(self):
+        # 16 mm up passes SWIPE_MM, but 12 mm sideways needs 18 up.
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 40.0),
+            (0.01, 4, 48.0, 24.0),
+        ])
+        self.assertEqual(actions, [])
+
+    def test_three_finger_vertical_motion_is_a_drag_not_an_overview(self):
+        actions = start_drag(self.machine)
+        actions += feed(self.machine, [(0.07, 3, 52.5, 5.0)])
+        self.assertNotIn(Overview(show=True), actions)
+        self.assertEqual(actions[0], ButtonDown())
 
     def test_diagonal_below_axis_ratio_produces_nothing(self):
         # 16 mm sideways passes SWIPE_MM, but 12 mm vertical needs 18 sideways.

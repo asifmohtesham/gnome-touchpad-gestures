@@ -1,8 +1,8 @@
 # finger-drag
 
 Three-finger drag and four-finger workspace switching for a GNOME-on-X11
-laptop. One unprivileged Python daemon reads the touchpad and writes to two
-virtual input devices. It never grabs the touchpad, so normal pointing,
+laptop. One unprivileged Python daemon reads the touchpad and writes to
+three virtual input devices. It never grabs the touchpad, so normal pointing,
 scrolling and tapping are untouched.
 
 | Gesture | Result |
@@ -10,6 +10,8 @@ scrolling and tapping are untouched.
 | Three fingers, moving | Drags with the left button held |
 | Four fingers, swipe left | Next workspace (`Ctrl+Alt+Right`) |
 | Four fingers, swipe right | Previous workspace (`Ctrl+Alt+Left`) |
+| Four fingers, swipe up | Open the Activities overview |
+| Four fingers, swipe down | Close the Activities overview |
 | Two fingers, flick and lift | The page keeps gliding and slows to a stop |
 | Any touch during a glide | The glide stops at once |
 
@@ -53,7 +55,7 @@ Edit the constants at the top of `finger_drag/gestures.py`, then run
 | `DRAG_SETTLE_S` | 0.05 | stop a four-finger swipe from clicking as the fingers land |
 | `DRAG_RELEASE_S` | 0.3 | get more time to reposition fingers mid-drag |
 | `POINTER_COUNTS_PER_MM` | 12.0 | make the pointer faster while dragging |
-| `SWIPE_MM` | 15.0 | require a longer swipe to switch workspace |
+| `SWIPE_MM` | 15.0 | require a longer swipe, sideways or up and down |
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
 
 Momentum scrolling has its own constants at the top of
@@ -100,6 +102,11 @@ Run after installing or changing a tunable.
 - [ ] Four-finger swipe left and right switches workspace, once per swipe.
 - [ ] Suspend and resume; gestures work again within a few seconds.
 - [ ] `systemctl --user stop finger-drag` mid-drag releases the button.
+- [ ] Four-finger swipe up opens the overview; swiping up again leaves it
+      open.
+- [ ] Four-finger swipe down closes the overview.
+- [ ] A four-finger swipe sideways inside the overview still switches
+      workspace.
 - [ ] A two-finger flick keeps gliding in the same direction, up, down
       and sideways.
 - [ ] The page does not lurch faster or slower at the moment of lifting.
@@ -115,6 +122,9 @@ Run after installing or changing a tunable.
 - Workspace changes snap once per swipe; they do not follow the fingers.
 - Holding a physical modifier key while swiping changes what the key chord
   means to GNOME.
+- The overview is opened and closed by asking GNOME Shell directly, so that
+  part works on GNOME only. If GNOME does not answer within half a second
+  the request is dropped and logged; the other gestures carry on.
 - A glide goes to whatever window is under the pointer, so it follows the
   pointer if an external mouse moves it mid-glide.
 - Pressing Ctrl during a glide zooms in apps that zoom on Ctrl+scroll. The

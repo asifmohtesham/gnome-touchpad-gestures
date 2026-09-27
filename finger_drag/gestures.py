@@ -39,7 +39,13 @@ class SwitchWorkspace:
     direction: Direction
 
 
-Action = ButtonDown | ButtonUp | Move | SwitchWorkspace
+@dataclass(frozen=True)
+class Overview:
+    """Open (show) or close GNOME's Activities overview."""
+    show: bool
+
+
+Action = ButtonDown | ButtonUp | Move | SwitchWorkspace | Overview
 
 
 class State(enum.Enum):
@@ -170,6 +176,10 @@ class GestureMachine:
             self.state = State.SWIPE_DONE
             # Content follows the fingers: moving left reveals the next one.
             return [SwitchWorkspace(Direction.NEXT if sx < 0 else Direction.PREVIOUS)]
+        if abs(sy) >= SWIPE_MM and abs(sy) >= SWIPE_AXIS_RATIO * abs(sx):
+            self.state = State.SWIPE_DONE
+            # The pad's y grows towards the user, so moving up is negative.
+            return [Overview(show=sy < 0)]
         return []
 
     def _swipe_done(self, count: int) -> list[Action]:

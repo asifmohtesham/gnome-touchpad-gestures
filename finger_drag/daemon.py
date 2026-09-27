@@ -14,6 +14,7 @@ from evdev import ecodes as e
 from finger_drag.gestures import GestureMachine
 from finger_drag.momentum import MomentumMachine
 from finger_drag.output import WORKSPACE_KEYS, Output
+from finger_drag.shell import Shell
 from finger_drag.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
@@ -173,7 +174,7 @@ def main(argv=None) -> int:
                     e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
          e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
         name="finger-drag wheel")
-    output = Output(pointer, keyboard, wheel)
+    output = Output(pointer, keyboard, wheel, Shell())
     print(f"finger-drag: listening on {device.path} ({device.name})", flush=True)
     try:
         run(device, make_tracker(device),
