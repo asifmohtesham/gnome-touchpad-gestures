@@ -19,7 +19,10 @@ if ! cmp -s "$here/$rule" "/etc/udev/rules.d/$rule"; then
 fi
 sudo udevadm control --reload
 sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
-sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='event*'
+# Only the touchpad: a change event makes X remove and re-add the device,
+# so triggering every input device would briefly drop the keyboard too.
+sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='event*' \
+    --property-match=ID_INPUT_TOUCHPAD=1
 sudo udevadm settle
 
 echo "Checking device access..."
