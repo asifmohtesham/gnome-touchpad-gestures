@@ -2,7 +2,7 @@ import unittest
 
 from evdev import ecodes as e
 
-from finger_drag.slots import Frame, SlotTracker, units_per_mm
+from finger_drag.slots import MT_TOOL_PALM, Frame, SlotTracker, units_per_mm
 
 
 def touch(tracker, slot, tracking_id, x=None, y=None):
@@ -88,6 +88,29 @@ class SlotTrackerTest(unittest.TestCase):
         self.tracker.feed(e.EV_ABS, e.ABS_MT_POSITION_Y, 600)
         touch(self.tracker, 0, 10, 100, 200)
         self.assertEqual(report(self.tracker), Frame(2, 20.0, 20.0))
+
+    def test_palm_contact_is_not_counted(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        touch(self.tracker, 1, 2, 300, 600)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, MT_TOOL_PALM)
+        self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
+
+    def test_finger_reclassified_as_palm_and_back(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        self.assertEqual(report(self.tracker).count, 1)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, MT_TOOL_PALM)
+        self.assertEqual(report(self.tracker).count, 0)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, 0)
+        self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
+
+    def test_finger_in_a_slot_that_held_a_palm_is_counted(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, MT_TOOL_PALM)
+        touch(self.tracker, 0, -1)
+        report(self.tracker)
+        touch(self.tracker, 0, 2)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_TOOL_TYPE, 0)
+        self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
 
     def test_unrelated_events_are_ignored(self):
         self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1))

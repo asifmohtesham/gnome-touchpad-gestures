@@ -7,6 +7,9 @@ from evdev import ecodes as e
 
 FALLBACK_WIDTH_MM = 100.0
 FALLBACK_HEIGHT_MM = 60.0
+# Value of ABS_MT_TOOL_TYPE for a contact the firmware classified as a palm.
+# python-evdev 1.7 does not export the MT_TOOL_* constants.
+MT_TOOL_PALM = 2
 
 
 def units_per_mm(minimum: int, maximum: int, resolution: int, fallback_mm: float) -> float:
@@ -30,6 +33,7 @@ class _Slot:
     active: bool = False
     x: int | None = None
     y: int | None = None
+    palm: bool = False
 
 
 class SlotTracker:
@@ -61,11 +65,14 @@ class SlotTracker:
             slot.x = value
         elif code == e.ABS_MT_POSITION_Y:
             slot.y = value
+        elif code == e.ABS_MT_TOOL_TYPE:
+            slot.palm = value == MT_TOOL_PALM
         return None
 
     def _frame(self) -> Frame:
         fingers = [s for s in self._slots.values()
-                   if s.active and s.x is not None and s.y is not None]
+                   if s.active and not s.palm
+                   and s.x is not None and s.y is not None]
         if not fingers:
             return Frame(0, 0.0, 0.0)
         count = len(fingers)
