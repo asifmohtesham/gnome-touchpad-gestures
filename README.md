@@ -56,14 +56,15 @@ cd gnome-x11-touchpad-gestures
 ./install/install.sh
 ```
 
-The service runs the code straight from that directory, and the installer
-records where it is. Two things follow:
+The installer copies the program to `~/.local/share/finger-drag`, and the
+service runs that copy. Two things follow:
 
-- **If you move or rename the directory, run `./install/install.sh` again
-  from its new place.** Until you do, the service points at the old location
-  and will not start.
-- **Whatever is checked out there is what runs.** Switching branch or pulling
-  changes what the service does the next time it starts.
+- **The repository can live anywhere.** Move it, rename it or delete it
+  afterwards; the service keeps running.
+- **Changing the code here does not change what runs** until you install
+  again. After editing a file or pulling an update, run
+  `./install/install.sh`. It asks for your password only the first time, or
+  when the udev rule itself has changed.
 
 The commands below are all run from the repository directory.
 
@@ -81,8 +82,8 @@ If it says a re-login is needed, log out and in, then run it again.
   devices, without joining the `input` group, which would expose the
   keyboard too.
 - **One user service**, `~/.config/systemd/user/finger-drag.service`. It
-  starts with your graphical session, and only if that session is X11. It
-  holds the path of the directory you installed from.
+  starts with your graphical session, and only if that session is X11.
+- **The program**, copied to `~/.local/share/finger-drag`.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
@@ -97,11 +98,11 @@ finds.
 ./install/uninstall.sh
 ```
 
-This stops and removes the service, removes the udev rule, makes udev look
-at the two devices afresh, and takes back the access to the touchpad and
-`/dev/uinput` that the rule had granted. Removing the rule alone would leave
-that access in place until the next reboot. The repository itself is left
-where it is.
+This stops and removes the service and the installed program, removes the
+udev rule, makes udev look at the two devices afresh, and takes back the
+access to the touchpad and `/dev/uinput` that the rule had granted. Removing
+the rule alone would leave that access in place until the next reboot. The
+repository itself is left where it is.
 
 Two limits. A reboot completes the removal: until then the login manager may
 grant access to `/dev/uinput` again at your next login. And if another
@@ -111,7 +112,8 @@ uninstaller takes that away too until the next reboot.
 ## Tuning
 
 Edit the constants at the top of `finger_drag/gestures.py`, then run
-`systemctl --user restart finger-drag`.
+`./install/install.sh` to install the change. It restarts the service and,
+with the udev rule already in place, does not ask for a password.
 
 | Constant | Default | Raise it to... |
 |---|---|---|

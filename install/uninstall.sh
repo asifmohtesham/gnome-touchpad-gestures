@@ -5,6 +5,7 @@ set -euo pipefail
 rule="/etc/udev/rules.d/71-finger-drag.rules"
 unit="finger-drag.service"
 unit_file="$HOME/.config/systemd/user/$unit"
+program_dir="$HOME/.local/share/finger-drag"
 
 touchpad_nodes() {
     local path
@@ -27,10 +28,11 @@ refuse_root() {
 
 main_as() {
     refuse_root "$1"
-    echo "Stopping and removing the user service..."
+    echo "Stopping and removing the user service and the program..."
     systemctl --user disable --now "$unit" 2>/dev/null || true
     rm -f "$unit_file"
     systemctl --user daemon-reload
+    rm -rf "$program_dir"
 
     echo "Removing udev rule and device access (needs sudo)..."
     sudo rm -f "$rule"
@@ -47,7 +49,7 @@ main_as() {
         sudo setfacl -x "u:$USER" "$node"
     done
 
-    echo "finger-drag removed. The repository itself was left in place."
+    echo "finger-drag removed. This repository was left in place."
 }
 
 main() {
