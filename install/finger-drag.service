@@ -7,8 +7,10 @@ After=graphical-session.target
 
 [Service]
 ExecStart=/usr/bin/python3 -m finger_drag.daemon
-# install.sh puts the repository's location here.
-WorkingDirectory=@REPO@
+# install.sh copies the program here. %h is the home directory, worked out
+# by systemd itself, so nothing about where the repository lives, or what
+# its path contains, ends up in this file.
+WorkingDirectory=%h/.local/share/finger-drag
 Restart=on-failure
 RestartSec=2
 

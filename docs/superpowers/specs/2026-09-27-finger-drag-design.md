@@ -60,7 +60,7 @@ Rejected alternatives:
 ## Layout
 
 ```
-<repository>/          anywhere; the installer records the location
+<repository>/          anywhere; the installer copies the program out of it
   finger_drag/
     __init__.py
     gestures.py        drag and four-finger swipes; pure, no device access
@@ -380,7 +380,7 @@ After=graphical-session.target
 
 [Service]
 ExecStart=/usr/bin/python3 -m finger_drag.daemon
-WorkingDirectory=@REPO@
+WorkingDirectory=%h/.local/share/finger-drag
 Restart=on-failure
 RestartSec=2
 
@@ -397,20 +397,40 @@ WantedBy=graphical-session.target
 3. Verify the current user can open both devices. If the check reports
    missing access (status 3), say that logging out and back in is required
    and stop. If it fails any other way, say so and do not suggest a re-login.
-4. Write the unit to `~/.config/systemd/user/` with the repository's
-   location filled in, then reload, enable and start it.
+4. Copy the program to `~/.local/share/finger-drag` and the unit to
+   `~/.config/systemd/user/`, then reload, enable and start the service.
 
-The unit in the repository is a template: `WorkingDirectory=@REPO@`. The
-installer replaces `@REPO@` with the directory it was run from, doubling any
-`%` because systemd reads a single one as the start of a specifier. The
-first version required the repository to be at `~/finger-drag`; it may now
-live anywhere. Moving it afterwards means running the installer again, since
-the installed unit still names the old place.
+Steps 1 and 2 are skipped, and no password is asked for, when the installed
+rule is identical to the one in the repository and the access check already
+passes. That is the normal case when reinstalling after a change to the code.
+
+#### Where the program runs from
+
+The service runs an installed copy, named in the unit as
+`%h/.local/share/finger-drag`. `%h` is the home directory, expanded by
+systemd itself. No path chosen by the user is written into any installed
+file, so the repository may be anywhere and may be moved or removed.
+
+This replaced two earlier designs:
+
+1. The first required the repository to be at `~/finger-drag` and named that
+   path in the unit. A plain `git clone` of the published repository creates
+   a directory with a different name, so the installer would have refused.
+2. The second let the repository live anywhere by writing its path into the
+   unit at install time. That path then had to be escaped, because systemd
+   reads `%` as the start of a specifier, and escaping covers only the
+   characters someone thought of. It also meant the service broke whenever
+   the directory was moved.
+
+The cost of the copy is that a change to the code takes effect only when the
+installer is run again. The copy is replaced whole each time, so a module
+removed from the repository does not linger in the installed program.
 
 Before step 1 it confirms `python3-evdev` can be imported, so a missing
 dependency is reported before anything on the system is changed.
 
-`install/uninstall.sh` disables and removes the service, removes the rule,
+`install/uninstall.sh` disables and removes the service and the installed
+program, removes the rule,
 reloads udev, triggers the touchpad and uinput so that udev drops the tag it
 remembered for them, and strips this user's ACL entry from `/dev/uinput` and
 the touchpad node. The last step is needed because removing the rule does not

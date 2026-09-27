@@ -7,6 +7,10 @@ repo="$(dirname "$here")"
 rule="71-finger-drag.rules"
 unit="finger-drag.service"
 unit_dir="$HOME/.config/systemd/user"
+rules_dir="/etc/udev/rules.d"
+# Where the program is installed. The unit names the same place as
+# %h/.local/share/finger-drag, so the two must change together.
+program_dir="$HOME/.local/share/finger-drag"
 # Exit status of `finger_drag.daemon --check` when device access is missing.
 no_access=3
 
@@ -48,22 +52,26 @@ refuse_root() {
     fi
 }
 
-# Prints the unit with the repository's location filled in.
-render_unit() {
-    python3 - "$here/$unit" "$1" <<'PYTHON'
-import sys
+check_access() {
+    (cd "$repo" && python3 -m finger_drag.daemon --check)
+}
 
-template, location = sys.argv[1], sys.argv[2]
-# systemd reads a single % as the start of a specifier.
-location = location.replace("%", "%%")
-sys.stdout.write(open(template).read().replace("@REPO@", location))
-PYTHON
+# Whether the privileged step has anything left to do.
+needs_sudo() {
+    ! cmp -s "$here/$rule" "$rules_dir/$rule" || ! check_access >/dev/null 2>&1
+}
+
+install_program() {
+    # Replaced whole, so a module removed from the repository does not linger.
+    rm -rf "$program_dir/finger_drag"
+    mkdir -p "$program_dir/finger_drag"
+    cp "$repo"/finger_drag/*.py "$program_dir/finger_drag/"
 }
 
 install_service() {
+    install_program
     mkdir -p "$unit_dir"
-    render_unit "$repo" > "$unit_dir/$unit"
-    chmod 0644 "$unit_dir/$unit"
+    install -m 0644 "$here/$unit" "$unit_dir/$unit"
     systemctl --user daemon-reload
     systemctl --user enable "$unit"
     systemctl --user restart "$unit"
@@ -84,34 +92,40 @@ main_as() {
         echo "The service only starts in an X11 session." >&2
     fi
 
-    echo "Installing udev rule (needs sudo)..."
-    if ! cmp -s "$here/$rule" "/etc/udev/rules.d/$rule"; then
-        sudo install -m 0644 "$here/$rule" "/etc/udev/rules.d/$rule"
+    if needs_sudo; then
+        echo "Installing udev rule (needs sudo)..."
+        if ! cmp -s "$here/$rule" "$rules_dir/$rule"; then
+            sudo install -m 0644 "$here/$rule" "$rules_dir/$rule"
+        fi
+        sudo udevadm control --reload
+        sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
+        # Only the touchpad: a change event makes X remove and re-add the
+        # device, so triggering every input device would briefly drop the
+        # keyboard too.
+        sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='event*' \
+            --property-match=ID_INPUT_TOUCHPAD=1
+        sudo udevadm settle
+    else
+        echo "The udev rule is in place and access is granted: no password needed."
     fi
-    sudo udevadm control --reload
-    sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
-    # Only the touchpad: a change event makes X remove and re-add the device,
-    # so triggering every input device would briefly drop the keyboard too.
-    sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='event*' \
-        --property-match=ID_INPUT_TOUCHPAD=1
-    sudo udevadm settle
 
     echo "Checking device access..."
     local status=0
-    (cd "$repo" && python3 -m finger_drag.daemon --check) || status=$?
+    check_access || status=$?
     if [ "$status" -ne 0 ]; then
         explain_check_failure "$status" "$(touchpad_count)"
         exit 1
     fi
 
-    echo "Installing user service..."
+    echo "Installing the program and the user service..."
     install_service
 
     sleep 1
     systemctl --user --no-pager --lines=5 status "$unit"
     echo
-    echo "The service runs the code in $repo."
-    echo "If you move that directory, run this script again from its new place."
+    echo "Installed to $program_dir."
+    echo "The service runs that copy, so this directory can be moved or removed."
+    echo "After changing the code here, run this script again to install it."
 }
 
 main() {
