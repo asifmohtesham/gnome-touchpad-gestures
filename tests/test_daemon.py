@@ -3,7 +3,7 @@ from collections import namedtuple
 
 from evdev import ecodes as e
 
-from finger_drag.daemon import is_touchpad, pump
+from finger_drag.daemon import Machines, is_touchpad, pump
 from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, State
 from finger_drag.slots import SlotTracker
 
@@ -154,6 +154,51 @@ class PumpTest(unittest.TestCase):
         ], 0.1)
         frame = self.tracker.feed(e.EV_SYN, e.SYN_REPORT, 0)
         self.assertEqual(frame.count, 2)
+
+
+class FakeMachine:
+    def __init__(self, action, deadline):
+        self.action = action
+        self.deadline = deadline
+        self.updates = []
+
+    def update(self, t, count, cx, cy, regrouped=False):
+        self.updates.append((t, count, cx, cy, regrouped))
+        return [self.action]
+
+    def tick(self, t):
+        return [self.action]
+
+    def next_deadline(self):
+        return self.deadline
+
+
+class MachinesTest(unittest.TestCase):
+    def setUp(self):
+        self.first = FakeMachine("first", None)
+        self.second = FakeMachine("second", None)
+        self.machines = Machines(self.first, self.second)
+
+    def test_every_machine_sees_every_frame(self):
+        actions = self.machines.update(1.0, 2, 3.0, 4.0, True)
+        self.assertEqual(actions, ["first", "second"])
+        self.assertEqual(self.first.updates, [(1.0, 2, 3.0, 4.0, True)])
+        self.assertEqual(self.second.updates, [(1.0, 2, 3.0, 4.0, True)])
+
+    def test_tick_reaches_every_machine(self):
+        self.assertEqual(self.machines.tick(1.0), ["first", "second"])
+
+    def test_no_deadline_when_no_machine_has_one(self):
+        self.assertIsNone(self.machines.next_deadline())
+
+    def test_earliest_deadline_wins(self):
+        self.first.deadline = 5.0
+        self.second.deadline = 2.0
+        self.assertEqual(self.machines.next_deadline(), 2.0)
+
+    def test_a_single_deadline_is_used(self):
+        self.second.deadline = 7.0
+        self.assertEqual(self.machines.next_deadline(), 7.0)
 
 
 if __name__ == "__main__":

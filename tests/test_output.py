@@ -4,6 +4,7 @@ from evdev import ecodes as e
 
 from finger_drag.gestures import (
     ButtonDown, ButtonUp, Direction, Move, SwitchWorkspace)
+from finger_drag.momentum import Scroll
 from finger_drag.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
 
 SYN = "syn"
@@ -28,8 +29,10 @@ class OutputTest(unittest.TestCase):
     def setUp(self):
         self.pointer = FakeDevice()
         self.keyboard = FakeDevice()
+        self.wheel = FakeDevice()
         self.sleeps = []
-        self.output = Output(self.pointer, self.keyboard, sleep=self.sleeps.append)
+        self.output = Output(
+            self.pointer, self.keyboard, self.wheel, sleep=self.sleeps.append)
 
     def test_button_down_and_up(self):
         self.output.emit([ButtonDown(), ButtonUp()])
@@ -92,6 +95,57 @@ class OutputTest(unittest.TestCase):
         self.pointer.events.clear()
         self.output.emit([Move(0.5, 0.0)])
         self.assertEqual(self.pointer.events, [])
+
+    def test_scroll_writes_high_resolution_wheel_units(self):
+        self.output.emit([Scroll(0.0, 40.0)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, 40), SYN,
+        ])
+        self.assertEqual(self.pointer.events, [])
+
+    def test_scroll_adds_a_notch_for_every_120_units(self):
+        for _ in range(7):
+            self.output.emit([Scroll(0.0, 40.0)])
+        notches = [ev for ev in self.wheel.events
+                   if ev != SYN and ev[1] == e.REL_WHEEL]
+        self.assertEqual(notches, [(e.EV_REL, e.REL_WHEEL, 1)] * 2)
+        self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), 280)
+
+    def test_notch_travels_in_the_same_frame_as_the_units_that_complete_it(self):
+        self.output.emit([Scroll(0.0, 100.0)])
+        self.wheel.events.clear()
+        self.output.emit([Scroll(0.0, 30.0)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, 30),
+            (e.EV_REL, e.REL_WHEEL, 1),
+            SYN,
+        ])
+
+    def test_scroll_down_and_sideways(self):
+        self.output.emit([Scroll(-130.0, -250.0)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_HWHEEL_HI_RES, -130),
+            (e.EV_REL, e.REL_HWHEEL, -1),
+            (e.EV_REL, e.REL_WHEEL_HI_RES, -250),
+            (e.EV_REL, e.REL_WHEEL, -2),
+            SYN,
+        ])
+
+    def test_scroll_fractions_carry_over(self):
+        for _ in range(8):
+            self.output.emit([Scroll(0.25, -0.25)])
+        self.assertEqual(total(self.wheel.events, e.REL_HWHEEL_HI_RES), 2)
+        self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), -2)
+
+    def test_release_all_drops_pending_scroll(self):
+        self.output.emit([Scroll(0.0, 100.75)])
+        self.output.release_all()
+        self.wheel.events.clear()
+        self.output.emit([Scroll(0.0, 0.5)])
+        self.output.emit([Scroll(0.0, 30.0)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, 30), SYN,
+        ])
 
 
 if __name__ == "__main__":
