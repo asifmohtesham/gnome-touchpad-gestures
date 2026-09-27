@@ -188,9 +188,15 @@ class MainTest(unittest.TestCase):
         # Never pressed; the only write is the release on shutdown.
         self.assertEqual(self.button_values(), [0])
 
+    def test_check_reports_missing_access_with_its_own_exit_status(self):
+        with mock.patch.object(daemon, "find_touchpad", return_value=None), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.assertEqual(daemon.main(["--check"]), daemon.EXIT_NO_ACCESS)
+        self.assertNotIn(daemon.EXIT_NO_ACCESS, (0, 1, 2))
+
     def test_no_touchpad_exits_with_an_error_and_creates_no_devices(self):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            self.assertEqual(self.run_main(None), 1)
+            self.assertEqual(self.run_main(None), daemon.EXIT_NO_ACCESS)
         self.assertIn("no accessible touchpad", stderr.getvalue())
         self.assertEqual(self.devices, {})
 

@@ -17,6 +17,9 @@ from finger_drag.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
+# Distinct from a crash (1) or a usage error (2) so that install.sh can tell
+# "log out and back in" apart from every other failure.
+EXIT_NO_ACCESS = 3
 NO_TOUCHPAD = (
     "finger-drag: no accessible touchpad found. Is "
     "/etc/udev/rules.d/71-finger-drag.rules installed? "
@@ -98,12 +101,12 @@ def check() -> int:
     device = find_touchpad()
     if device is None:
         print(NO_TOUCHPAD, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     print(f"touchpad: {device.path} ({device.name})")
     device.close()
     if not os.access(UINPUT_PATH, os.W_OK):
         print(NO_UINPUT, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     print(f"uinput: {UINPUT_PATH} writable")
     return 0
 
@@ -126,10 +129,10 @@ def main(argv=None) -> int:
     device = find_touchpad()
     if device is None:
         print(NO_TOUCHPAD, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
     if not os.access(UINPUT_PATH, os.W_OK):
         print(NO_UINPUT, file=sys.stderr)
-        return 1
+        return EXIT_NO_ACCESS
 
     signal.signal(signal.SIGTERM, _terminate)
     pointer = evdev.UInput(

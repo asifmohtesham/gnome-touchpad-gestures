@@ -82,7 +82,8 @@ tested with synthetic input.
 The daemon calls the state machine once per touchpad frame (one `SYN_REPORT`):
 
 ```python
-machine.update(t: float, count: int, cx: float, cy: float) -> list[Action]
+machine.update(t: float, count: int, cx: float, cy: float,
+               regrouped: bool = False) -> list[Action]
 machine.tick(t: float) -> list[Action]
 machine.next_deadline() -> float | None
 ```
@@ -92,12 +93,19 @@ machine.next_deadline() -> float | None
 - `cx`, `cy`: centroid of the touching fingers in **millimetres**. The daemon
   converts device units to millimetres using the axis resolution the device
   reports, so thresholds are independent of the hardware.
+- `regrouped`: true when a different set of fingers is being averaged than
+  in the previous frame, even if `count` is the same.
 - `tick` lets time-based transitions fire when no touchpad events arrive.
 - `next_deadline` tells the daemon how long it may sleep.
 
 Whenever `count` changes, the centroid jumps because a different set of
 fingers is being averaged. The machine resets its reference point on every
 count change and produces no motion for that frame.
+
+The same jump happens when one finger lifts and another lands within a
+single frame: the count is unchanged but the fingers are not. The slot
+tracker compares each frame's set of tracking ids with the previous frame's
+and reports `regrouped`; the machine treats it exactly like a count change.
 
 ### Output
 
@@ -176,7 +184,9 @@ the natural scrolling already enabled on this machine.
 Enumerate `/dev/input/event*` and pick the first device that has
 `INPUT_PROP_POINTER`, `ABS_MT_SLOT` and `ABS_MT_POSITION_X`. Do not hard-code
 `event8`; event numbers can change between boots. If no device matches, exit
-non-zero with a message naming the likely cause (udev rule not installed).
+with status 3 and a message naming the likely cause (udev rule not
+installed). Status 3 means "device access is missing" and nothing else, so
+the installer can tell it apart from a crash or a missing dependency.
 
 ### Reading
 
@@ -192,6 +202,12 @@ On `SYN_DROPPED` (the kernel's event buffer overran) slot state is stale. The
 daemon ends any gesture in progress, discards events up to and including the
 next `SYN_REPORT`, then starts again from an empty slot table and the
 device's current slot. Fingers must touch again to start a gesture.
+
+Fingers that are already on the pad, at startup or after a `SYN_DROPPED`,
+have no touch event left to send, so they cannot be counted. The daemon reads
+`BTN_TOUCH` from the device at those two moments. If it is set, the tracker
+reports no fingers until `BTN_TOUCH` goes to 0, which means the pad is empty.
+That event also clears any finger whose lift was never seen.
 
 The event loop waits on the device with a timeout taken from
 `machine.next_deadline()` and calls `machine.tick` when the timeout expires.
@@ -263,12 +279,21 @@ WantedBy=graphical-session.target
 
 1. Copy the udev rule to `/etc/udev/rules.d/` (the only step needing `sudo`).
 2. Reload udev rules and trigger the touchpad and uinput devices.
-3. Verify the current user can open both devices; if not, say that logging
-   out and back in is required and stop.
+3. Verify the current user can open both devices. If the check reports
+   missing access (status 3), say that logging out and back in is required
+   and stop. If it fails any other way, say so and do not suggest a re-login.
 4. Copy the unit to `~/.config/systemd/user/`, reload, enable and start it.
 
-The README documents uninstalling: disable the service, remove the unit and
-the rule, reload udev.
+Before step 1 it confirms `python3-evdev` can be imported, so a missing
+dependency is reported before anything on the system is changed.
+
+`install/uninstall.sh` disables and removes the service, removes the rule,
+reloads udev, and strips this user's ACL entry from `/dev/uinput` and the
+touchpad node. The last step is needed because removing the rule does not
+take back access that was already granted.
+
+Both scripts run only when executed. Sourcing them defines their functions
+and does nothing else, which is how the tests reach them.
 
 ## Testing
 
@@ -293,6 +318,11 @@ the rule, reload udev.
 | `SYN_DROPPED` mid-drag | drag ends, button released after `DRAG_RELEASE_S` |
 | Events between `SYN_DROPPED` and the next `SYN_REPORT` | discarded |
 | `SIGTERM`, or the touchpad vanishing, mid-drag | button and keys released, devices closed |
+| One finger lifts and another lands in the same frame | no `Move` for that frame |
+| Fingers already down at startup or after `SYN_DROPPED` | nothing reported until the pad has been empty |
+| `--check` without device access | exit status 3 |
+| Installer's check fails with a status other than 3 | message does not suggest logging out |
+| Sourcing `install.sh` or `uninstall.sh` | nothing runs |
 
 Run with `python3 -m unittest discover -s tests`.
 

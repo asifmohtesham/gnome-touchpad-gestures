@@ -28,12 +28,13 @@ re-login is needed, log out and in, then run it again.
 ## Uninstall
 
 ```bash
-systemctl --user disable --now finger-drag.service
-rm ~/.config/systemd/user/finger-drag.service
-systemctl --user daemon-reload
-sudo rm /etc/udev/rules.d/71-finger-drag.rules
-sudo udevadm control --reload
+~/finger-drag/install/uninstall.sh
 ```
+
+This stops and removes the service, removes the udev rule, and takes back
+the access to the touchpad and `/dev/uinput` that the rule had granted.
+Removing the rule alone would leave that access in place until the next
+reboot. The repository itself is left where it is.
 
 ## Tuning
 
@@ -56,6 +57,10 @@ systemctl --user status finger-drag      # is it running?
 journalctl --user -u finger-drag -n 20   # what did it say?
 cd ~/finger-drag && python3 -m finger_drag.daemon --check
 ```
+
+`--check` exits 0 when both devices are accessible and 3 when access is
+missing. Any other status is a different problem, such as a missing
+`python3-evdev`, and logging out will not fix it.
 
 ## Tests
 
@@ -83,3 +88,8 @@ Run after installing or changing a tunable.
 - Workspace changes snap once per swipe; they do not follow the fingers.
 - Holding a physical modifier key while swiping changes what the key chord
   means to GNOME.
+- X applies its mouse acceleration to the virtual pointer, so drag speed
+  also depends on the mouse speed set in GNOME Settings.
+  `POINTER_COUNTS_PER_MM` is tuned with that in place.
+- If fingers are on the pad when the service starts, gestures begin working
+  once the pad has been completely empty for a moment.
