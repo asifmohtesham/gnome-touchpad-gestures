@@ -82,10 +82,10 @@ If it says a re-login is needed, log out and in, then run it again.
 ~/finger-drag/install/uninstall.sh
 ```
 
-This stops and removes the service, removes the udev rule, and takes back
-the access to the touchpad and `/dev/uinput` that the rule had granted.
-Removing the rule alone would leave that access in place until the next
-reboot. The repository itself is left where it is.
+This stops and removes the service, removes the udev rule, makes udev look
+at the two devices afresh, and takes back the access to the touchpad and
+`/dev/uinput` that the rule had granted. Removing the rule alone would leave
+that access in place until the next reboot. The repository itself is left where it is.
 
 ## Tuning
 
@@ -177,7 +177,11 @@ Run after installing or changing a tunable.
   glide diagonally.
 - A glide needs a real scroll first: both fingers moving together for at
   least 3 mm, without the pad being clicked. A resting thumb, a tap or a
-  pinch does not glide.
+  pinch does not glide. Nor does a scroll that came to rest before the
+  fingers left.
+- A glide does not know where the page ends. In GTK apps the glow or
+  bounce at the end of a page can stay until the glide is over. Touch the
+  pad to end it sooner.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
   natural scrolling is on for the touchpad and off for mice. If yours
   differ, set `NATURAL_SCROLL` in `finger_drag/momentum.py`.

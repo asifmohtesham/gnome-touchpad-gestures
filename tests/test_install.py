@@ -26,6 +26,27 @@ ENVIRONMENT = dict(
     os.environ, HOME=SANDBOX.name, PATH=f"{STUBS}{os.pathsep}{os.environ['PATH']}")
 
 
+def record(script, function, *args):
+    """Like call(), but sudo and systemctl succeed and are written to a log."""
+    with tempfile.TemporaryDirectory(prefix="finger-drag-test-") as sandbox:
+        stubs = pathlib.Path(sandbox) / "bin"
+        stubs.mkdir()
+        log = pathlib.Path(sandbox) / "log"
+        log.touch()
+        for name in ("sudo", "systemctl"):
+            stub = stubs / name
+            stub.write_text(f'#!/bin/sh\necho "{name} $*" >> "{log}"\n')
+            stub.chmod(stub.stat().st_mode | stat.S_IXUSR)
+        environment = dict(
+            os.environ, HOME=sandbox,
+            PATH=f"{stubs}{os.pathsep}{os.environ['PATH']}")
+        command = 'source "$1"; shift; "$@"'
+        result = subprocess.run(
+            ["bash", "-c", command, "bash", str(INSTALL / script), function, *args],
+            capture_output=True, text=True, timeout=30, env=environment)
+        return result, log.read_text().splitlines()
+
+
 def call(script, function, *args):
     """Source a script, which must not run anything by itself, and call one function."""
     # The script must not be $0, or it would believe it was run directly.
@@ -80,6 +101,37 @@ class UninstallScriptTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("not as root", result.stderr)
         self.assertNotIn("stub:", result.stderr)
+
+    def position(self, log, *words):
+        for index, line in enumerate(log):
+            if all(word in line for word in words):
+                return index
+        self.fail(f"no command with {words} in {log}")
+
+    def test_uninstall_makes_udev_forget_the_devices_before_revoking_access(self):
+        result, log = record("uninstall.sh", "main_as", "1000")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        removed = self.position(log, "sudo rm -f", "71-finger-drag.rules")
+        reloaded = self.position(log, "sudo udevadm control --reload")
+        uinput = self.position(log, "sudo udevadm trigger", "uinput")
+        touchpad = self.position(log, "sudo udevadm trigger", "ID_INPUT_TOUCHPAD=1")
+        settled = self.position(log, "sudo udevadm settle")
+        revoked = self.position(log, "sudo setfacl -x", "/dev/uinput")
+
+        self.assertLess(removed, reloaded)
+        self.assertLess(reloaded, min(uinput, touchpad))
+        self.assertLess(max(uinput, touchpad), settled)
+        self.assertLess(settled, revoked)
+
+    def test_uninstall_touches_only_the_touchpad_and_uinput(self):
+        _, log = record("uninstall.sh", "main_as", "1000")
+        triggers = [line for line in log if "udevadm trigger" in line]
+        self.assertEqual(len(triggers), 2)
+        for line in triggers:
+            self.assertTrue(
+                "--sysname-match=uinput" in line
+                or "--property-match=ID_INPUT_TOUCHPAD=1" in line, line)
 
     def test_sourcing_the_uninstaller_runs_nothing(self):
         result = call("uninstall.sh", "true")

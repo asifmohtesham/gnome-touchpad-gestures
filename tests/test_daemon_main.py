@@ -56,12 +56,21 @@ class FakeTouchpad:
 
 
 class FakeUInput:
+    # Names of devices that fail, for the tests that need one to.
+    cannot_be_created = set()
+    cannot_be_closed = set()
+    cannot_be_written = set()
+
     def __init__(self, events, name):
+        if name in FakeUInput.cannot_be_created:
+            raise OSError(13, f"cannot create {name}")
         self.name = name
         self.written = []
         self.closed = False
 
     def write(self, etype, code, value):
+        if self.name in FakeUInput.cannot_be_written:
+            raise OSError(19, f"cannot write to {self.name}")
         self.written.append((etype, code, value))
 
     def syn(self):
@@ -69,6 +78,8 @@ class FakeUInput:
 
     def close(self):
         self.closed = True
+        if self.name in FakeUInput.cannot_be_closed:
+            raise OSError(19, f"cannot close {self.name}")
 
 
 def three_fingers_at(x):
@@ -165,6 +176,9 @@ class MainTest(unittest.TestCase):
     def setUp(self):
         self.devices = {}
         FakeShell.requests = []
+        FakeUInput.cannot_be_created = set()
+        FakeUInput.cannot_be_closed = set()
+        FakeUInput.cannot_be_written = set()
         self.addCleanup(
             signal.signal, signal.SIGTERM, signal.getsignal(signal.SIGTERM))
 
@@ -172,6 +186,9 @@ class MainTest(unittest.TestCase):
         device = FakeUInput(events, name)
         self.devices[name] = device
         return device
+
+    def closed(self):
+        return {name for name, device in self.devices.items() if device.closed}
 
     def run_main(self, touchpad):
         if touchpad is not None:
@@ -290,6 +307,42 @@ class MainTest(unittest.TestCase):
         self.assertEqual(FakeShell.requests, [True])
         self.assertEqual(self.button_values(), [0])
         self.assertEqual(self.wheel_units(), [])
+
+    def test_one_device_failing_to_close_does_not_stop_the_others(self):
+        FakeUInput.cannot_be_closed = {"finger-drag pointer"}
+        touchpad = FakeTouchpad([interrupt])
+
+        with self.assertRaises(OSError), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.run_main(touchpad)
+
+        self.assertEqual(self.closed(), {
+            "finger-drag pointer", "finger-drag keyboard", "finger-drag wheel"})
+        self.assertTrue(touchpad.closed)
+
+    def test_failing_to_release_does_not_stop_the_devices_closing(self):
+        FakeUInput.cannot_be_written = {"finger-drag keyboard"}
+        touchpad = FakeTouchpad([interrupt])
+
+        with self.assertRaises(OSError), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.run_main(touchpad)
+
+        self.assertEqual(self.closed(), {
+            "finger-drag pointer", "finger-drag keyboard", "finger-drag wheel"})
+        self.assertTrue(touchpad.closed)
+
+    def test_device_that_cannot_be_created_leaves_nothing_open(self):
+        FakeUInput.cannot_be_created = {"finger-drag wheel"}
+        touchpad = FakeTouchpad([])
+
+        with self.assertRaises(OSError), \
+                contextlib.redirect_stderr(io.StringIO()):
+            self.run_main(touchpad)
+
+        self.assertEqual(
+            self.closed(), {"finger-drag pointer", "finger-drag keyboard"})
+        self.assertTrue(touchpad.closed)
 
     def test_fingers_down_at_startup_do_not_start_a_drag(self):
         touchpad = FakeTouchpad(

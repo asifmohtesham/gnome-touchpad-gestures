@@ -35,6 +35,7 @@ SPOIL_LINGER_S = DRAG_RELEASE_S  # a drag still holds its button this long
 SPEED_WINDOW_S = 0.06        # speed is averaged over this long
 SPEED_MIN_SPAN_S = 0.02      # too short a span gives a meaningless speed
 LIFT_GRACE_S = 0.10          # fingers may leave this far apart
+STILL_S = 0.03               # silence this long before a lift means they stopped
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,7 @@ class Scroll:
     """Wheel motion in high-resolution units; 120 is one notch."""
     dx: float
     dy: float
+    first: bool = False  # the first step of a glide
 
 
 def glide_speed(elapsed: float) -> float:
@@ -71,12 +73,14 @@ class MomentumMachine:
         self._history: collections.deque = collections.deque()
         self._velocity = (0.0, 0.0)   # mm/s of the last two-finger motion
         self._velocity_at = -math.inf
+        self._two_at = -math.inf      # when two fingers last reported
         self._travel = 0.0            # mm scrolled during this touch
         self._spoiled = False         # this touch cannot end in a glide
         self._spoiled_until = -math.inf
         self._glide: tuple[float, float] | None = None  # starting units/s
         self._started = 0.0
         self._last = 0.0
+        self._first = False
         self._deadline: float | None = None
 
     def next_deadline(self) -> float | None:
@@ -92,14 +96,19 @@ class MomentumMachine:
             return []
         # After a stall, skip the distance missed instead of jumping it.
         step = min(t - self._last, GLIDE_LATE_FRAMES * GLIDE_FRAME_S)
+        first, self._first = self._first, False
         self._last = t
         self._deadline = t + GLIDE_FRAME_S
-        return [Scroll(vx * step, vy * step)]
+        return [Scroll(vx * step, vy * step, first)]
 
     def update(self, t: float, count: int, cx: float, cy: float,
                regrouped: bool = False, fingers: tuple = (),
                pressed: bool = False) -> list[Scroll]:
         changed = count != self._count or regrouped
+        if self._count == 2 and count != 2 and t - self._two_at > STILL_S:
+            # A pad reports nothing while fingers rest, so a gap before the
+            # fingers leave means they had stopped moving.
+            self._velocity = (0.0, 0.0)
         self._count = count
         if count > 0:
             self._touching(t, count, cx, cy, changed, fingers, pressed)
@@ -128,6 +137,7 @@ class MomentumMachine:
             # measured so far is kept; it expires through LIFT_GRACE_S.
             self._history.clear()
             return
+        self._two_at = t
         if changed:
             # A different set of fingers: the centroid is not comparable.
             self._history.clear()
@@ -156,6 +166,7 @@ class MomentumMachine:
                 and self._deadline is None):
             self._glide = self._wheel_velocity(*self._velocity)
             self._started = self._last = t
+            self._first = True
             self._deadline = t + GLIDE_FRAME_S
         if self._spoiled:
             self._spoiled_until = t + SPOIL_LINGER_S

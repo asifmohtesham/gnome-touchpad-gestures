@@ -240,6 +240,8 @@ Three virtual devices, so that libinput classifies each one cleanly:
 - On every exit path, including `SIGTERM` and unhandled exceptions, the
   daemon releases `BTN_LEFT` and all keys before closing the virtual devices,
   so a crash cannot leave a drag or a modifier stuck.
+- Each step of that shutdown runs even if an earlier one failed, and a
+  device that could not be created leaves the ones before it closed.
 
 ## Component: `momentum.py` (added 2026-09-27)
 
@@ -265,6 +267,10 @@ these hold:
 - both fingers took part: each covered at least `TOGETHER_RATIO` of the
   motion they share, so a resting thumb or a pinch does not count
 - the pad itself was not clicked during the touch
+- the fingers were still moving when they left: no more than `STILL_S`
+  passed between the last two-finger report and the first report with
+  fewer fingers. A pad reports nothing while fingers rest, so a longer gap
+  means they had stopped
 - no drag was still holding its button, which it does for
   `SPOIL_LINGER_S` after its fingers lift
 
@@ -293,12 +299,20 @@ lift: the glide ends and nothing new may start.
 | `GLIDE_MIN_TRAVEL_MM` | 3.0 | Least two-finger travel that counts as a scroll |
 | `TOGETHER_RATIO` | 0.5 | Share of the common motion each finger must cover |
 | `SPOIL_LINGER_S` | 0.3 | How long after a drag nothing may glide |
+| `STILL_S` | 0.03 | Silence before a lift that means the fingers had stopped |
 | `GLIDE_FRAME_S` | 0.008 | Time between glide steps |
 | `SCROLL_UNITS_PER_MM` | 84.0 | Wheel units per millimetre of finger travel: 39.37 units per mm at 1000 dpi, times libinput's unaccelerated touchpad factor 0.9 x 0.2968, times 8 wheel units each. Was 94, which missed the 0.9 |
 | `NATURAL_SCROLL` | True | The page follows the fingers |
 | `SPEED_WINDOW_S` | 0.06 | Span over which speed is measured |
 | `SPEED_MIN_SPAN_S` | 0.02 | Shortest span that gives a usable speed |
 | `LIFT_GRACE_S` | 0.10 | How far apart fingers may lift |
+
+The first `Scroll` of each glide is marked `first`. The output then drops
+what the previous glide left over towards a whole notch, so a new glide
+never inherits part of an old one.
+
+Not solvable here: a glide cannot know that the page has reached its end,
+so an app's end-of-page effect may last until the glide is over.
 
 Output goes to a third virtual device, `finger-drag wheel`, as
 `REL_WHEEL_HI_RES` and `REL_HWHEEL_HI_RES`, with a `REL_WHEEL` or
@@ -373,8 +387,9 @@ Before step 1 it confirms `python3-evdev` can be imported, so a missing
 dependency is reported before anything on the system is changed.
 
 `install/uninstall.sh` disables and removes the service, removes the rule,
-reloads udev, and strips this user's ACL entry from `/dev/uinput` and the
-touchpad node. The last step is needed because removing the rule does not
+reloads udev, triggers the touchpad and uinput so that udev drops the tag it
+remembered for them, and strips this user's ACL entry from `/dev/uinput` and
+the touchpad node. The last step is needed because removing the rule does not
 take back access that was already granted.
 
 Both scripts run only when executed. Sourcing them defines their functions
