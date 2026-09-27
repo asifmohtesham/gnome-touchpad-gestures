@@ -38,9 +38,11 @@ it has only ever run on the hardware below. Expect to tune it for yours.
 - GNOME on **X11**. On Wayland GNOME has its own gestures, and they would
   conflict with these.
 - A touchpad that reports each finger separately (multitouch protocol B).
-  Nearly all laptops from the last ten years do.
-- `python3-evdev` and `python3-dbus`. Ubuntu's desktop install has both;
-  otherwise `sudo apt install python3-evdev python3-dbus`.
+  Nearly all laptops from the last ten years do. The four-finger gestures
+  need one that tracks at least four fingers at once.
+- `python3-evdev` and `python3-dbus`:
+  `sudo apt install python3-evdev python3-dbus`. The installer checks for
+  both before it changes anything.
 - `Ctrl+Alt+Left` and `Ctrl+Alt+Right` bound to switching workspace, which is
   GNOME's default.
 
@@ -52,16 +54,6 @@ location matters.
 ```bash
 git clone https://github.com/asifmohtesham/gnome-x11-touchpad-gestures.git ~/finger-drag
 ```
-
-Then name your touchpad in the udev rule. Find its name:
-
-```bash
-grep -i touchpad /proc/bus/input/devices
-```
-
-and put it in place of `SYNA8017:00 06CB:CEB2 Touchpad` in
-`install/71-finger-drag.rules`. The rule is what lets your user read that
-one device and create virtual ones, without joining the `input` group.
 
 Then install:
 
@@ -76,6 +68,22 @@ that needs it, and refuses to run as root.
 
 If it says a re-login is needed, log out and in, then run it again.
 
+### What the installer changes
+
+- **One udev rule**, `/etc/udev/rules.d/71-finger-drag.rules`. It lets the
+  user sitting at the machine read its touchpads and create virtual input
+  devices, without joining the `input` group, which would expose the
+  keyboard too.
+- **One user service**, `~/.config/systemd/user/finger-drag.service`. It
+  starts with your graphical session, and only if that session is X11.
+
+Be aware of what the rule allows: any program you run can then create input
+devices, and so type and click as you. On X11 any program can already do
+that through XTest, so this adds little there.
+
+If the machine has more than one touchpad, the daemon uses the first it
+finds.
+
 ## Uninstall
 
 ```bash
@@ -85,7 +93,13 @@ If it says a re-login is needed, log out and in, then run it again.
 This stops and removes the service, removes the udev rule, makes udev look
 at the two devices afresh, and takes back the access to the touchpad and
 `/dev/uinput` that the rule had granted. Removing the rule alone would leave
-that access in place until the next reboot. The repository itself is left where it is.
+that access in place until the next reboot. The repository itself is left
+where it is.
+
+Two limits. A reboot completes the removal: until then the login manager may
+grant access to `/dev/uinput` again at your next login. And if another
+package also grants access to `/dev/uinput`, as `steam-devices` does, the
+uninstaller takes that away too until the next reboot.
 
 ## Tuning
 
@@ -111,6 +125,7 @@ Momentum scrolling has its own constants at the top of
 | `GLIDE_MIN_MM_S` | 40.0 | require a harder flick before anything glides |
 | `GLIDE_STOP_UNITS_S` | 480.0 | end the glide sooner, while it is still moving briskly |
 | `GLIDE_MIN_TRAVEL_MM` | 3.0 | require a longer scroll before a lift can glide |
+| `STILL_S` | 0.03 | make flicks glide more reliably. Raise it if a flick sometimes fails to glide; lower it if a scroll that had stopped glides anyway |
 
 Set `NATURAL_SCROLL = False` there if you turn natural scrolling off for
 the touchpad. To change the shape of the slowdown itself, edit
@@ -167,8 +182,15 @@ Run after installing or changing a tunable.
 - Holding a physical modifier key while swiping changes what the key chord
   means to GNOME.
 - The overview is opened and closed by asking GNOME Shell directly, so that
-  part works on GNOME only. If GNOME does not answer within half a second
-  the request is dropped and logged; the other gestures carry on.
+  part works on GNOME only. GNOME ignores the request on the lock screen and
+  while a menu is open, as it does the Super key.
+- While the daemon waits for GNOME to answer, no gesture is handled. It waits
+  half a second at most, then logs it and carries on. GNOME may still act on
+  the request when it wakes.
+- A four-finger swipe needs all the fingers to move. Contacts that rest on
+  the pad while others move are not a swipe.
+- For a moment after a three-finger drag, a two-finger flick does not glide,
+  because the drag still holds its button.
 - A glide lasts up to about two seconds. During that time it goes to
   whatever window is under the pointer, so it follows the pointer if an
   external mouse moves it, and pressing Ctrl zooms in apps that zoom on
