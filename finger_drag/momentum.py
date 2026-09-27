@@ -77,6 +77,15 @@ class MomentumMachine:
             self._lifted(t)
         return []
 
+    def interrupt(self, t: float) -> list[Scroll]:
+        """Finger state was lost; this is not a lift, so nothing may glide."""
+        self._end_glide()
+        self._history.clear()
+        self._forget_speed()
+        self._spoiled = False
+        self._count = 0
+        return []
+
     def _touching(self, t: float, count: int, cx: float, cy: float,
                   changed: bool) -> None:
         if self._deadline is not None:

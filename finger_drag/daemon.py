@@ -46,6 +46,10 @@ class Machines:
         return [action for machine in self._machines
                 for action in machine.tick(t)]
 
+    def interrupt(self, t: float) -> list:
+        return [action for machine in self._machines
+                for action in machine.interrupt(t)]
+
     def next_deadline(self) -> float | None:
         deadlines = [machine.next_deadline() for machine in self._machines]
         return min((d for d in deadlines if d is not None), default=None)
@@ -92,7 +96,7 @@ def pump(events, read_state, tracker, machine, output, now: float) -> None:
             # The kernel dropped events, so slot state is stale. End whatever
             # gesture was in progress; fingers must touch again to start one.
             tracker.begin_resync()
-            output.emit(machine.update(now, 0, 0.0, 0.0))
+            output.emit(machine.interrupt(now))
             continue
         if tracker.resyncing:
             # The rest of the interrupted packet belongs to slots we can no

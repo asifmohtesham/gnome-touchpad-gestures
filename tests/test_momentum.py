@@ -100,6 +100,32 @@ class StartingAGlideTest(unittest.TestCase):
         self.assertIsNone(self.machine.next_deadline())
 
 
+class InterruptTest(unittest.TestCase):
+    """The daemon interrupts the machines when the kernel dropped events."""
+
+    def setUp(self):
+        self.machine = MomentumMachine()
+
+    def test_interrupt_mid_scroll_does_not_glide(self):
+        t, _ = scroll(self.machine, 0.0, 200.0)
+        self.assertEqual(self.machine.interrupt(t + STEP), [])
+        self.assertIsNone(self.machine.next_deadline())
+        self.machine.update(t + 2 * STEP, 0, 0.0, 0.0)
+        self.assertIsNone(self.machine.next_deadline())
+
+    def test_interrupt_ends_a_glide(self):
+        lifted = flick(self.machine, 0.0, 200.0)
+        self.machine.interrupt(lifted + 0.05)
+        self.assertIsNone(self.machine.next_deadline())
+        self.assertEqual(self.machine.tick(lifted + 0.1), [])
+
+    def test_gliding_works_again_after_an_interrupt(self):
+        t, _ = scroll(self.machine, 0.0, 200.0, count=3)
+        self.machine.interrupt(t + STEP)
+        flick(self.machine, 0.0, 200.0, start=t + 1.0)
+        self.assertIsNotNone(self.machine.next_deadline())
+
+
 class GlidingTest(unittest.TestCase):
     def setUp(self):
         self.machine = MomentumMachine()
