@@ -32,7 +32,7 @@ class Output:
             if isinstance(action, Move):
                 self._move(action.dx, action.dy)
             elif isinstance(action, Scroll):
-                self._scroll(action.dx, action.dy)
+                self._scroll(action.dx, action.dy, action.first)
             elif isinstance(action, ButtonDown):
                 self._button(1)
             elif isinstance(action, ButtonUp):
@@ -56,7 +56,10 @@ class Output:
         self._scroll_rest = {e.REL_HWHEEL: 0.0, e.REL_WHEEL: 0.0}
         self._notch_rest = {e.REL_HWHEEL: 0, e.REL_WHEEL: 0}
 
-    def _scroll(self, dx: float, dy: float) -> None:
+    def _scroll(self, dx: float, dy: float, first: bool = False) -> None:
+        if first:
+            # What the last glide left over belongs to that glide.
+            self._forget_scroll()
         sideways = self._turn(e.REL_HWHEEL, e.REL_HWHEEL_HI_RES, dx)
         upright = self._turn(e.REL_WHEEL, e.REL_WHEEL_HI_RES, dy)
         if sideways or upright:

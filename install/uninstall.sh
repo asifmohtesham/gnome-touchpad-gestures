@@ -35,6 +35,12 @@ main_as() {
     echo "Removing udev rule and device access (needs sudo)..."
     sudo rm -f "$rule"
     sudo udevadm control --reload
+    # udev remembers that it tagged these devices, and the login manager would
+    # grant access again from that memory. A fresh look at them clears it.
+    sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
+    sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='event*' \
+        --property-match=ID_INPUT_TOUCHPAD=1
+    sudo udevadm settle
     # Removing the rule does not take back access that was already granted.
     local node
     for node in /dev/uinput $(touchpad_nodes); do

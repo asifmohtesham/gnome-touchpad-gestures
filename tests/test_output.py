@@ -154,6 +154,27 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(total(self.wheel.events, e.REL_HWHEEL_HI_RES), 2)
         self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), -2)
 
+    def test_new_glide_starts_from_a_clean_notch(self):
+        self.output.emit([Scroll(0.0, 100.0, first=True)])
+        self.wheel.events.clear()
+        self.output.emit([Scroll(0.0, -30.0, first=True)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, -30), SYN,
+        ])
+        self.wheel.events.clear()
+        self.output.emit([Scroll(0.0, -100.0)])
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, -100),
+            (e.EV_REL, e.REL_WHEEL, -1),
+            SYN,
+        ])
+
+    def test_steps_within_one_glide_share_their_notch(self):
+        self.output.emit([Scroll(0.0, 100.0, first=True)])
+        self.wheel.events.clear()
+        self.output.emit([Scroll(0.0, 30.0)])
+        self.assertIn((e.EV_REL, e.REL_WHEEL, 1), self.wheel.events)
+
     def test_release_all_drops_pending_scroll(self):
         self.output.emit([Scroll(0.0, 100.75)])
         self.output.release_all()

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import select
 import signal
@@ -165,32 +166,38 @@ def main(argv=None) -> int:
         return EXIT_NO_ACCESS
 
     signal.signal(signal.SIGTERM, _terminate)
-    pointer = evdev.UInput(
-        {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
-        name="finger-drag pointer")
-    keyboard = evdev.UInput(
-        {e.EV_KEY: list(WORKSPACE_KEYS)}, name="finger-drag keyboard")
-    # The motion axes and buttons are never used; they are what makes
-    # libinput accept the device as a mouse and listen to its wheel.
-    wheel = evdev.UInput(
-        {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
-                    e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
-         e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
-        name="finger-drag wheel")
-    output = Output(pointer, keyboard, wheel, Shell())
-    print(f"finger-drag: listening on {device.path} ({device.name})", flush=True)
-    try:
-        run(device, make_tracker(device),
-            Machines(GestureMachine(), MomentumMachine()), output)
-    except KeyboardInterrupt:
-        pass
-    finally:
+    # Everything registered here is undone on the way out, last first, and
+    # each step runs even if an earlier one failed.
+    with contextlib.ExitStack() as cleanup:
+        cleanup.callback(device.close)
+
+        def create(capabilities, name):
+            virtual = evdev.UInput(capabilities, name=name)
+            cleanup.callback(virtual.close)
+            return virtual
+
+        pointer = create(
+            {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
+            "finger-drag pointer")
+        keyboard = create(
+            {e.EV_KEY: list(WORKSPACE_KEYS)}, "finger-drag keyboard")
+        # The motion axes and buttons are never used; they are what makes
+        # libinput accept the device as a mouse and listen to its wheel.
+        wheel = create(
+            {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
+                        e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
+             e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
+            "finger-drag wheel")
+        output = Output(pointer, keyboard, wheel, Shell())
         # A crash must never leave a drag or a modifier stuck.
-        output.release_all()
-        pointer.close()
-        keyboard.close()
-        wheel.close()
-        device.close()
+        cleanup.callback(output.release_all)
+        print(f"finger-drag: listening on {device.path} ({device.name})",
+              flush=True)
+        try:
+            run(device, make_tracker(device),
+                Machines(GestureMachine(), MomentumMachine()), output)
+        except KeyboardInterrupt:
+            pass
     return 0
 
 

@@ -82,6 +82,24 @@ class StartingAGlideTest(unittest.TestCase):
         self.machine.update(t + 0.3, 0, 0.0, 0.0)
         self.assertIsNone(self.machine.next_deadline())
 
+    def test_fingers_held_still_before_lifting_do_not_glide(self):
+        # A pad that reports nothing while fingers are still: the last frame
+        # is the last motion, and the lift comes 90 ms later.
+        t, _ = scroll(self.machine, 0.0, 200.0)
+        self.machine.update(t + 0.09, 0, 0.0, 0.0)
+        self.assertIsNone(self.machine.next_deadline())
+
+    def test_fingers_held_still_then_lifting_unevenly_do_not_glide(self):
+        t, _ = scroll(self.machine, 0.0, 200.0)
+        self.machine.update(t + 0.09, 1, 50.0, 40.0)
+        self.machine.update(t + 0.097, 0, 0.0, 0.0)
+        self.assertIsNone(self.machine.next_deadline())
+
+    def test_lift_two_frames_after_the_last_motion_still_glides(self):
+        t, _ = scroll(self.machine, 0.0, 200.0)
+        self.machine.update(t + 2 * STEP, 0, 0.0, 0.0)
+        self.assertIsNotNone(self.machine.next_deadline())
+
     def test_fingers_lifting_one_frame_apart_still_glide(self):
         t, _ = scroll(self.machine, 0.0, 200.0)
         self.machine.update(t + STEP, 1, 50.0, 40.0)
@@ -265,6 +283,18 @@ class GlidingTest(unittest.TestCase):
         start = m.GLIDE_MAX_MM_S * m.SCROLL_UNITS_PER_MM
         expected = (start - m.GLIDE_STOP_UNITS_S) * m.GLIDE_TAU_S
         self.assertAlmostEqual(travelled, expected, delta=expected * 0.03)
+
+    def test_only_the_first_step_of_a_glide_is_marked_first(self):
+        flick(self.machine, 0.0, 200.0)
+        steps = glide(self.machine)
+        self.assertTrue(steps[0].first)
+        self.assertFalse(any(step.first for step in steps[1:]))
+
+    def test_every_glide_has_a_first_step(self):
+        flick(self.machine, 0.0, 200.0)
+        glide(self.machine)
+        flick(self.machine, 0.0, -200.0, start=10.0)
+        self.assertTrue(glide(self.machine)[0].first)
 
     def test_glide_ends(self):
         flick(self.machine, 0.0, 200.0)
