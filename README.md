@@ -23,7 +23,7 @@ Design: `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
 ## Status
 
 A personal project, written with Claude Code and used daily on one laptop.
-It has a test suite and has been through two independent code reviews, but
+It has a test suite and has been through three independent code reviews, but
 it has only ever run on the hardware below. Expect to tune it for yours.
 
 | | Tested on |
