@@ -15,7 +15,18 @@ touchpad_nodes() {
     done
 }
 
-main() {
+refuse_root() {
+    local uid="$1"
+    if [ "$uid" -eq 0 ]; then
+        echo "Run this as your normal user, not as root and not with sudo." >&2
+        echo "It installs a service for your own desktop session, and asks" >&2
+        echo "for your password itself for the one step that needs it." >&2
+        exit 1
+    fi
+}
+
+main_as() {
+    refuse_root "$1"
     echo "Stopping and removing the user service..."
     systemctl --user disable --now "$unit" 2>/dev/null || true
     rm -f "$unit_file"
@@ -31,6 +42,10 @@ main() {
     done
 
     echo "finger-drag removed. The repository at ~/finger-drag was left in place."
+}
+
+main() {
+    main_as "$(id -u)"
 }
 
 # Sourcing this file defines the functions without running anything.
