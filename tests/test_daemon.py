@@ -69,6 +69,19 @@ class PumpTest(unittest.TestCase):
         self.assertEqual(self.output.actions, [ButtonDown()])
         self.assertIs(self.machine.state, State.DRAGGING)
 
+    def test_finger_swap_mid_drag_does_not_move_the_pointer(self):
+        self.start_drag()
+        self.pump([
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 2),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 3),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 200),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 1200),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 200),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.50)
+        self.assertEqual(self.output.actions, [ButtonDown()])
+
     def test_events_without_a_report_produce_nothing(self):
         self.pump(three_fingers_at(500)[:-1], 0.0)
         self.assertEqual(self.output.actions, [])

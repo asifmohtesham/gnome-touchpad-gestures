@@ -1,7 +1,7 @@
 """Multitouch protocol B slot tracking: raw events in, finger frames out."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from evdev import ecodes as e
 
@@ -26,11 +26,15 @@ class Frame:
     count: int
     cx: float
     cy: float
+    # True when a different set of fingers is being averaged than in the
+    # previous frame, so the centroid is not comparable with the last one.
+    regrouped: bool = field(default=False, compare=False)
 
 
 @dataclass
 class _Slot:
     active: bool = False
+    tracking_id: int = -1
     x: int | None = None
     y: int | None = None
     palm: bool = False
@@ -43,6 +47,7 @@ class SlotTracker:
         self._y_units_per_mm = y_units_per_mm
         self._slots: dict[int, _Slot] = {}
         self._current = current_slot
+        self._identity: frozenset = frozenset()
         self.resyncing = False
 
     def begin_resync(self) -> None:
@@ -68,6 +73,7 @@ class SlotTracker:
         slot = self._slots.setdefault(self._current, _Slot())
         if code == e.ABS_MT_TRACKING_ID:
             slot.active = value != -1
+            slot.tracking_id = value
         elif code == e.ABS_MT_POSITION_X:
             slot.x = value
         elif code == e.ABS_MT_POSITION_Y:
@@ -77,14 +83,18 @@ class SlotTracker:
         return None
 
     def _frame(self) -> Frame:
-        fingers = [s for s in self._slots.values()
+        fingers = {index: s for index, s in self._slots.items()
                    if s.active and not s.palm
-                   and s.x is not None and s.y is not None]
+                   and s.x is not None and s.y is not None}
+        identity = frozenset((index, s.tracking_id) for index, s in fingers.items())
+        regrouped = identity != self._identity
+        self._identity = identity
         if not fingers:
-            return Frame(0, 0.0, 0.0)
+            return Frame(0, 0.0, 0.0, regrouped)
         count = len(fingers)
         return Frame(
             count,
-            sum(s.x for s in fingers) / count / self._x_units_per_mm,
-            sum(s.y for s in fingers) / count / self._y_units_per_mm,
+            sum(s.x for s in fingers.values()) / count / self._x_units_per_mm,
+            sum(s.y for s in fingers.values()) / count / self._y_units_per_mm,
+            regrouped,
         )

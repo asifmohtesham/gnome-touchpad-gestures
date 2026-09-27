@@ -120,6 +120,33 @@ class SlotTrackerTest(unittest.TestCase):
         self.tracker.reset(0)
         self.assertFalse(self.tracker.resyncing)
 
+    def test_steady_fingers_are_not_regrouped(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        touch(self.tracker, 1, 2, 300, 200)
+        self.assertTrue(report(self.tracker).regrouped)
+        self.tracker.feed(e.EV_ABS, e.ABS_MT_POSITION_X, 320)
+        self.assertFalse(report(self.tracker).regrouped)
+
+    def test_finger_swap_within_one_frame_is_regrouped(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        touch(self.tracker, 1, 2, 200, 200)
+        touch(self.tracker, 2, 3, 300, 200)
+        report(self.tracker)
+        touch(self.tracker, 2, -1)
+        touch(self.tracker, 3, 4, 900, 200)
+        frame = report(self.tracker)
+        self.assertEqual(frame.count, 3)
+        self.assertTrue(frame.regrouped)
+
+    def test_new_finger_in_the_same_slot_within_one_frame_is_regrouped(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        report(self.tracker)
+        touch(self.tracker, 0, -1)
+        touch(self.tracker, 0, 2, 900, 200)
+        frame = report(self.tracker)
+        self.assertEqual(frame.count, 1)
+        self.assertTrue(frame.regrouped)
+
     def test_unrelated_events_are_ignored(self):
         self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1))
         self.assertIsNone(self.tracker.feed(e.EV_ABS, e.ABS_X, 500))

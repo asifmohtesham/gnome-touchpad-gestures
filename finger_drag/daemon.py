@@ -72,7 +72,8 @@ def pump(events, current_slot, tracker, machine, output, now: float) -> None:
             continue
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:
-            output.emit(machine.update(now, frame.count, frame.cx, frame.cy))
+            output.emit(machine.update(
+                now, frame.count, frame.cx, frame.cy, frame.regrouped))
 
 
 def run(device, tracker, machine, output, clock=time.monotonic) -> None:
