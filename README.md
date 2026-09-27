@@ -10,6 +10,8 @@ scrolling and tapping are untouched.
 | Three fingers, moving | Drags with the left button held |
 | Four fingers, swipe left | Next workspace (`Ctrl+Alt+Right`) |
 | Four fingers, swipe right | Previous workspace (`Ctrl+Alt+Left`) |
+| Two fingers, flick and lift | The page keeps gliding and slows to a stop |
+| Any touch during a glide | The glide stops at once |
 
 Design: `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
 
@@ -54,6 +56,20 @@ Edit the constants at the top of `finger_drag/gestures.py`, then run
 | `SWIPE_MM` | 15.0 | require a longer swipe to switch workspace |
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
 
+Momentum scrolling has its own constants at the top of
+`finger_drag/momentum.py`:
+
+| Constant | Default | Raise it to... |
+|---|---|---|
+| `SCROLL_UNITS_PER_MM` | 94.0 | make the glide start faster. Set it so the page neither speeds up nor slows down at the moment you lift |
+| `GLIDE_TAU_S` | 0.5 | make the glide last longer and travel further |
+| `GLIDE_MIN_MM_S` | 40.0 | require a harder flick before anything glides |
+| `AXIS_LOCK_RATIO` | 2.0 | allow more diagonal glides |
+
+Set `NATURAL_SCROLL = False` there if you turn natural scrolling off for
+the touchpad. To change the shape of the slowdown itself, edit
+`glide_speed()` in the same file.
+
 ## Troubleshooting
 
 ```bash
@@ -84,6 +100,13 @@ Run after installing or changing a tunable.
 - [ ] Four-finger swipe left and right switches workspace, once per swipe.
 - [ ] Suspend and resume; gestures work again within a few seconds.
 - [ ] `systemctl --user stop finger-drag` mid-drag releases the button.
+- [ ] A two-finger flick keeps gliding in the same direction, up, down
+      and sideways.
+- [ ] The page does not lurch faster or slower at the moment of lifting.
+- [ ] Touching the pad stops a glide.
+- [ ] A slow scroll that ends in a stop does not glide.
+- [ ] No app travels much too far after a flick (it may be adding its own
+      glide on top).
 
 ## Known behaviour
 
@@ -92,6 +115,13 @@ Run after installing or changing a tunable.
 - Workspace changes snap once per swipe; they do not follow the fingers.
 - Holding a physical modifier key while swiping changes what the key chord
   means to GNOME.
+- A glide goes to whatever window is under the pointer, so it follows the
+  pointer if an external mouse moves it mid-glide.
+- Pressing Ctrl during a glide zooms in apps that zoom on Ctrl+scroll. The
+  daemon cannot see the keyboard, by design.
+- GNOME treats the virtual wheel as a mouse. Glide direction assumes
+  natural scrolling is on for the touchpad and off for mice, as it is on
+  this machine.
 - X applies its mouse acceleration to the virtual pointer, so drag speed
   also depends on the mouse speed set in GNOME Settings.
   `POINTER_COUNTS_PER_MM` is tuned with that in place.

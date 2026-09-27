@@ -236,6 +236,67 @@ Two virtual devices, so that libinput classifies each one cleanly:
   daemon releases `BTN_LEFT` and all keys before closing the virtual devices,
   so a crash cannot leave a drag or a modifier stuck.
 
+## Component: `momentum.py` (added 2026-09-27)
+
+Goal: mimic macOS momentum scrolling. After a two-finger flick the page keeps
+gliding and slows to a stop, in every app, and any touch stops it.
+
+libinput leaves momentum to each toolkit, so on X11 some apps glide and
+others do not. This component adds one system-wide glide. It is pure logic
+with the same interface as the gesture machine (`update`, `tick`,
+`next_deadline`, `interrupt`), and the daemon runs the two side by side.
+
+While fingers are on the pad libinput does the scrolling as before. The
+component only measures the two-finger centroid's velocity over the last
+`SPEED_WINDOW_S`. When the pad becomes empty it starts a glide if all of
+these hold:
+
+- the last speed measurement is at most `LIFT_GRACE_S` old, so fingers may
+  leave a frame or two apart but a pause before lifting cancels the glide
+- the speed is at least `GLIDE_MIN_MM_S`
+- the touch never had three or more fingers, so drags and swipes never glide
+
+A glide emits `Scroll(dx, dy)` every `GLIDE_FRAME_S`, in high-resolution
+wheel units (120 per notch). Its speed is the starting speed times
+`glide_speed(elapsed)`, an exponential decay with time constant
+`GLIDE_TAU_S`, so the distance travelled is starting speed times
+`GLIDE_TAU_S`. It ends below `GLIDE_STOP_UNITS_S`, or at once on any touch.
+A flick at least `AXIS_LOCK_RATIO` times stronger on one axis glides along
+that axis only.
+
+`interrupt(t)` is what the daemon calls on `SYN_DROPPED`. For the gesture
+machine it is the same as every finger lifting. For momentum it is not a
+lift: the glide ends and nothing new may start.
+
+| Constant | Initial value | Meaning |
+|---|---|---|
+| `GLIDE_TAU_S` | 0.5 | Slowdown time constant |
+| `GLIDE_MIN_MM_S` | 40.0 | Slowest flick that glides |
+| `GLIDE_STOP_UNITS_S` | 40.0 | Speed at which a glide ends |
+| `GLIDE_FRAME_S` | 0.008 | Time between glide steps |
+| `SCROLL_UNITS_PER_MM` | 94.0 | Wheel units per millimetre of finger travel. An estimate of what libinput scrolls, to be tuned by feel |
+| `NATURAL_SCROLL` | True | The page follows the fingers |
+| `AXIS_LOCK_RATIO` | 2.0 | How lopsided a flick must be to glide on one axis |
+| `SPEED_WINDOW_S` | 0.06 | Span over which speed is measured |
+| `SPEED_MIN_SPAN_S` | 0.02 | Shortest span that gives a usable speed |
+| `LIFT_GRACE_S` | 0.10 | How far apart fingers may lift |
+
+Output goes to a third virtual device, `finger-drag wheel`, as
+`REL_WHEEL_HI_RES` and `REL_HWHEEL_HI_RES`, with a `REL_WHEEL` or
+`REL_HWHEEL` notch for every 120 units for programs that predate
+high-resolution scrolling. The device also declares motion axes and buttons
+it never uses, because that is what makes libinput accept it as a mouse.
+
+Not mimicked: the rubber-band bounce at the end of a page, which each app
+draws itself, and a glide staying with its original window, since X11 sends
+scrolling to the window under the pointer.
+
+Open risk: an app that already glides by itself may travel too far. On X11
+apps cannot tell wheel scrolling from finger scrolling, so they are expected
+to treat the glide as continued scrolling and cancel their own, but this is
+unmeasured. If an app overshoots, the follow-up is a skip list keyed on the
+window under the pointer.
+
 ## Permissions
 
 `install/71-finger-drag.rules`:
