@@ -42,12 +42,15 @@ class _Slot:
 
 class SlotTracker:
     def __init__(self, x_units_per_mm: float, y_units_per_mm: float,
-                 current_slot: int = 0) -> None:
+                 current_slot: int = 0, touching: bool = False) -> None:
         self._x_units_per_mm = x_units_per_mm
         self._y_units_per_mm = y_units_per_mm
         self._slots: dict[int, _Slot] = {}
         self._current = current_slot
         self._identity: frozenset = frozenset()
+        # Fingers that were already down cannot be seen: they have no touch
+        # event left to send. Report nothing until the pad has been empty.
+        self._waiting_for_lift = touching
         self.resyncing = False
 
     def begin_resync(self) -> None:
@@ -55,14 +58,18 @@ class SlotTracker:
         self._slots.clear()
         self.resyncing = True
 
-    def reset(self, current_slot: int) -> None:
+    def reset(self, current_slot: int, touching: bool = False) -> None:
         self._slots.clear()
         self._current = current_slot
+        self._waiting_for_lift = touching
         self.resyncing = False
 
     def feed(self, etype: int, code: int, value: int) -> Frame | None:
         if etype == e.EV_SYN and code == e.SYN_REPORT:
             return self._frame()
+        if etype == e.EV_KEY and code == e.BTN_TOUCH and value == 0:
+            self._pad_is_empty()
+            return None
         if etype != e.EV_ABS:
             return None
         if code == e.ABS_MT_SLOT:
@@ -82,10 +89,18 @@ class SlotTracker:
             slot.palm = value == MT_TOOL_PALM
         return None
 
+    def _pad_is_empty(self) -> None:
+        # Also heals a finger whose lift was never seen.
+        for slot in self._slots.values():
+            slot.active = False
+            slot.tracking_id = -1
+        self._waiting_for_lift = False
+
     def _frame(self) -> Frame:
-        fingers = {index: s for index, s in self._slots.items()
-                   if s.active and not s.palm
-                   and s.x is not None and s.y is not None}
+        fingers = {} if self._waiting_for_lift else {
+            index: s for index, s in self._slots.items()
+            if s.active and not s.palm
+            and s.x is not None and s.y is not None}
         identity = frozenset((index, s.tracking_id) for index, s in fingers.items())
         regrouped = identity != self._identity
         self._identity = identity

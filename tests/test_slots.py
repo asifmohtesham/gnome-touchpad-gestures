@@ -147,6 +147,47 @@ class SlotTrackerTest(unittest.TestCase):
         self.assertEqual(frame.count, 1)
         self.assertTrue(frame.regrouped)
 
+    def test_fingers_present_at_start_hide_everything_until_full_lift(self):
+        tracker = SlotTracker(10.0, 20.0, current_slot=0, touching=True)
+        # Two fingers were already down: they only ever send position updates.
+        tracker.feed(e.EV_ABS, e.ABS_MT_POSITION_X, 110)
+        tracker.feed(e.EV_ABS, e.ABS_MT_SLOT, 1)
+        tracker.feed(e.EV_ABS, e.ABS_MT_POSITION_X, 210)
+        # Three more land. Five are really down, so three must not be reported.
+        touch(tracker, 2, 7, 300, 200)
+        touch(tracker, 3, 8, 400, 200)
+        touch(tracker, 4, 9, 500, 200)
+        self.assertEqual(report(tracker), Frame(0, 0.0, 0.0))
+
+        for slot in (2, 3, 4):
+            touch(tracker, slot, -1)
+        tracker.feed(e.EV_KEY, e.BTN_TOUCH, 0)
+        self.assertEqual(report(tracker), Frame(0, 0.0, 0.0))
+
+        touch(tracker, 0, 10, 100, 200)
+        self.assertEqual(report(tracker), Frame(1, 10.0, 10.0))
+
+    def test_full_lift_clears_a_finger_whose_lift_was_never_seen(self):
+        touch(self.tracker, 0, 1, 100, 200)
+        self.assertEqual(report(self.tracker).count, 1)
+        self.tracker.feed(e.EV_KEY, e.BTN_TOUCH, 0)
+        self.assertEqual(report(self.tracker), Frame(0, 0.0, 0.0))
+
+    def test_touch_down_does_not_end_the_wait_for_a_full_lift(self):
+        tracker = SlotTracker(10.0, 20.0, touching=True)
+        tracker.feed(e.EV_KEY, e.BTN_TOUCH, 1)
+        touch(tracker, 0, 1, 100, 200)
+        self.assertEqual(report(tracker), Frame(0, 0.0, 0.0))
+
+    def test_reset_while_touching_waits_for_a_full_lift(self):
+        self.tracker.reset(0, touching=True)
+        touch(self.tracker, 0, 1, 100, 200)
+        self.assertEqual(report(self.tracker), Frame(0, 0.0, 0.0))
+        touch(self.tracker, 0, -1)
+        self.tracker.feed(e.EV_KEY, e.BTN_TOUCH, 0)
+        touch(self.tracker, 0, 2, 100, 200)
+        self.assertEqual(report(self.tracker), Frame(1, 10.0, 10.0))
+
     def test_unrelated_events_are_ignored(self):
         self.assertIsNone(self.tracker.feed(e.EV_KEY, e.BTN_LEFT, 1))
         self.assertIsNone(self.tracker.feed(e.EV_ABS, e.ABS_X, 500))

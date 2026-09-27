@@ -52,11 +52,17 @@ def make_tracker(device) -> SlotTracker:
     return SlotTracker(
         units_per_mm(x.min, x.max, x.resolution, FALLBACK_WIDTH_MM),
         units_per_mm(y.min, y.max, y.resolution, FALLBACK_HEIGHT_MM),
-        current_slot=device.absinfo(e.ABS_MT_SLOT).value,
+        *snapshot(device),
     )
 
 
-def pump(events, current_slot, tracker, machine, output, now: float) -> None:
+def snapshot(device) -> tuple[int, bool]:
+    """The device's current slot, and whether any finger is on the pad."""
+    return (device.absinfo(e.ABS_MT_SLOT).value,
+            e.BTN_TOUCH in device.active_keys())
+
+
+def pump(events, read_state, tracker, machine, output, now: float) -> None:
     for event in events:
         if event.type == e.EV_SYN and event.code == e.SYN_DROPPED:
             # The kernel dropped events, so slot state is stale. End whatever
@@ -68,7 +74,7 @@ def pump(events, current_slot, tracker, machine, output, now: float) -> None:
             # The rest of the interrupted packet belongs to slots we can no
             # longer identify, so it is discarded up to the next report.
             if event.type == e.EV_SYN and event.code == e.SYN_REPORT:
-                tracker.reset(current_slot())
+                tracker.reset(*read_state())
             continue
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:
@@ -77,15 +83,13 @@ def pump(events, current_slot, tracker, machine, output, now: float) -> None:
 
 
 def run(device, tracker, machine, output, clock=time.monotonic) -> None:
-    def current_slot() -> int:
-        return device.absinfo(e.ABS_MT_SLOT).value
-
     while True:
         deadline = machine.next_deadline()
         timeout = None if deadline is None else max(0.0, deadline - clock())
         ready, _, _ = select.select([device.fd], [], [], timeout)
         if ready:
-            pump(device.read(), current_slot, tracker, machine, output, clock())
+            pump(device.read(), lambda: snapshot(device), tracker, machine,
+                 output, clock())
         else:
             output.emit(machine.tick(clock()))
 
