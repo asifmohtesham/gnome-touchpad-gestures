@@ -2,7 +2,8 @@ import math
 import unittest
 
 from finger_drag import gestures as g
-from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, Move, State
+from finger_drag.gestures import (
+    ButtonDown, ButtonUp, Direction, GestureMachine, Move, State, SwitchWorkspace)
 
 
 def feed(machine, frames):
@@ -132,6 +133,126 @@ class ReleaseDelayTest(unittest.TestCase):
                 delay = g.release_delay(remaining)
                 self.assertTrue(math.isfinite(delay))
                 self.assertGreaterEqual(delay, 0.0)
+
+
+class FourFingerSwipeTest(unittest.TestCase):
+    def setUp(self):
+        self.machine = GestureMachine()
+
+    def test_swipe_left_switches_to_next(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 52.0, 25.0),
+            (0.02, 4, 44.0, 25.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+        self.assertIs(self.machine.state, State.SWIPE_DONE)
+
+    def test_swipe_right_switches_to_previous(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 40.0, 25.0),
+            (0.01, 4, 48.0, 25.0),
+            (0.02, 4, 56.0, 25.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.PREVIOUS)])
+
+    def test_travel_below_threshold_produces_nothing(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 46.0, 25.0),
+            (0.02, 0, 0.0, 0.0),
+        ])
+        self.assertEqual(actions, [])
+        self.assertIs(self.machine.state, State.IDLE)
+
+    def test_only_one_switch_per_swipe(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 90.0, 25.0),
+            (0.01, 4, 70.0, 25.0),
+            (0.02, 4, 50.0, 25.0),
+            (0.03, 4, 30.0, 25.0),
+            (0.04, 4, 10.0, 25.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+
+    def test_second_swipe_after_full_lift(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 40.0, 25.0),
+            (0.02, 0, 0.0, 0.0),
+            (0.50, 4, 40.0, 25.0),
+            (0.51, 4, 60.0, 25.0),
+        ])
+        self.assertEqual(actions, [
+            SwitchWorkspace(Direction.NEXT),
+            SwitchWorkspace(Direction.PREVIOUS),
+        ])
+
+    def test_vertical_swipe_produces_nothing(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 10.0),
+            (0.01, 4, 60.0, 30.0),
+            (0.02, 4, 60.0, 50.0),
+        ])
+        self.assertEqual(actions, [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_diagonal_below_axis_ratio_produces_nothing(self):
+        # 16 mm sideways passes SWIPE_MM, but 12 mm vertical needs 18 sideways.
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 20.0),
+            (0.01, 4, 44.0, 32.0),
+        ])
+        self.assertEqual(actions, [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_fifth_finger_mid_swipe_still_switches_once(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 52.0, 25.0),
+            (0.02, 5, 70.0, 30.0),
+            (0.03, 5, 62.0, 30.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+
+    def test_five_finger_swipe_switches(self):
+        actions = feed(self.machine, [
+            (0.00, 5, 60.0, 25.0),
+            (0.01, 5, 40.0, 25.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+
+    def test_uneven_lift_before_threshold_cannot_start_drag(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 55.0, 25.0),
+            (0.02, 3, 50.0, 25.0),
+            (0.03, 3, 30.0, 25.0),
+        ])
+        self.assertEqual(actions, [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_uneven_lift_after_switch_cannot_start_drag(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 40.0, 25.0),
+            (0.02, 3, 50.0, 25.0),
+            (0.03, 3, 30.0, 25.0),
+            (0.04, 0, 0.0, 0.0),
+        ])
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+        self.assertIs(self.machine.state, State.IDLE)
+
+    def test_three_finger_frames_do_not_add_swipe_travel(self):
+        actions = feed(self.machine, [
+            (0.00, 4, 60.0, 25.0),
+            (0.01, 4, 52.0, 25.0),
+            (0.02, 3, 50.0, 25.0),
+            (0.03, 3, 20.0, 25.0),
+            (0.04, 4, 45.0, 25.0),
+            (0.05, 4, 40.0, 25.0),
+        ])
+        self.assertEqual(actions, [])
 
 
 if __name__ == "__main__":

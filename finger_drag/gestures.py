@@ -147,6 +147,16 @@ class GestureMachine:
     def _swipe_tracking(self, count: int, dx: float, dy: float) -> list[Action]:
         if count == 0:
             self._enter_idle()
+            return []
+        if count < 4:
+            # Fingers lifting unevenly must not turn a swipe into a drag.
+            return []
+        self._swipe = (self._swipe[0] + dx, self._swipe[1] + dy)
+        sx, sy = self._swipe
+        if abs(sx) >= SWIPE_MM and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
+            self.state = State.SWIPE_DONE
+            # Content follows the fingers: moving left reveals the next one.
+            return [SwitchWorkspace(Direction.NEXT if sx < 0 else Direction.PREVIOUS)]
         return []
 
     def _swipe_done(self, count: int) -> list[Action]:
