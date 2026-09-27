@@ -1,4 +1,9 @@
-# finger-drag Implementation Plan
+# gnome-x11-touchpad-gestures Implementation Plan
+
+> **Historical record.** This is the plan the first version was built from.
+> The project has since been renamed, moved and extended, and the names and
+> paths below were updated with it, so the steps no longer describe a
+> sequence that can be followed as written. The spec is the current design.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +13,7 @@
 
 **Tech Stack:** Python 3.12, `python3-evdev` 1.7.0 (already installed), stdlib `unittest`, udev, systemd user services.
 
-**Spec:** `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
+**Spec:** `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
 ## Global Constraints
 
@@ -19,11 +24,11 @@
 - The daemon never grabs the touchpad (no `EVIOCGRAB`, no `device.grab()`).
 - Tests use stdlib `unittest` only. Run all tests from the repo root with
   `python3 -m unittest discover -s tests`.
-- Work in place in `~/finger-drag` on branch `daemon`. Do not use a separate
-  git worktree: the systemd unit runs the code from `%h/finger-drag`.
+- Work in place in `~/gnome-x11-touchpad-gestures` on branch `daemon`. Do not use a separate
+  git worktree: the systemd unit runs the code from `%h/gnome-x11-touchpad-gestures`.
 - Tunables are module-level constants. No configuration file.
 - Touchpad name for the udev rule, verbatim: `SYNA8017:00 06CB:CEB2 Touchpad`.
-- Virtual device names, verbatim: `finger-drag pointer`, `finger-drag keyboard`.
+- Virtual device names, verbatim: `gnome-x11-touchpad-gestures pointer`, `gnome-x11-touchpad-gestures keyboard`.
 
 ## Deviation from the spec layout
 
@@ -32,10 +37,10 @@ out of `daemon.py` so they can be unit tested without a device:
 
 | File | Responsibility |
 |---|---|
-| `finger_drag/gestures.py` | State machine: finger frames in, actions out |
-| `finger_drag/slots.py` | Multitouch slot tracking: raw events in, frames (count + centroid in mm) out |
-| `finger_drag/output.py` | Actions in, events on two virtual devices out |
-| `finger_drag/daemon.py` | Device discovery, event loop, signal handling, `--check` |
+| `gnome_x11_touchpad_gestures/gestures.py` | State machine: finger frames in, actions out |
+| `gnome_x11_touchpad_gestures/slots.py` | Multitouch slot tracking: raw events in, frames (count + centroid in mm) out |
+| `gnome_x11_touchpad_gestures/output.py` | Actions in, events on two virtual devices out |
+| `gnome_x11_touchpad_gestures/daemon.py` | Device discovery, event loop, signal handling, `--check` |
 
 Behaviour is unchanged from the spec.
 
@@ -64,13 +69,13 @@ Conditions the spec implies but does not list as test cases, most likely first:
 
 **Files:**
 - Create: `.gitignore`
-- Create: `finger_drag/__init__.py`
-- Create: `finger_drag/gestures.py`
+- Create: `gnome_x11_touchpad_gestures/__init__.py`
+- Create: `gnome_x11_touchpad_gestures/gestures.py`
 - Test: `tests/test_gestures.py`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces, all from `finger_drag.gestures`:
+- Produces, all from `gnome_x11_touchpad_gestures.gestures`:
   - Constants `DRAG_START_MM`, `DRAG_RELEASE_S`, `POINTER_COUNTS_PER_MM`, `SWIPE_MM`, `SWIPE_AXIS_RATIO` (floats)
   - `Direction` enum with members `NEXT`, `PREVIOUS`
   - Frozen dataclasses `ButtonDown()`, `ButtonUp()`, `Move(dx: float, dy: float)`, `SwitchWorkspace(direction: Direction)`
@@ -85,11 +90,11 @@ Conditions the spec implies but does not list as test cases, most likely first:
 - [ ] **Step 1: Create the branch and scaffold**
 
 ```bash
-cd ~/finger-drag
+cd ~/gnome-x11-touchpad-gestures
 git switch -c daemon
-mkdir -p finger_drag tests
+mkdir -p gnome_x11_touchpad_gestures tests
 printf '__pycache__/\n*.pyc\n' > .gitignore
-: > finger_drag/__init__.py
+: > gnome_x11_touchpad_gestures/__init__.py
 ```
 
 - [ ] **Step 2: Write the failing tests**
@@ -100,8 +105,8 @@ Create `tests/test_gestures.py`:
 import math
 import unittest
 
-from finger_drag import gestures as g
-from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, Move, State
+from gnome_x11_touchpad_gestures import gestures as g
+from gnome_x11_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, Move, State
 
 
 def feed(machine, frames):
@@ -244,7 +249,7 @@ Expected: FAIL with `ImportError` / `cannot import name 'gestures'`.
 
 - [ ] **Step 4: Write the implementation, leaving `release_delay` for the user**
 
-Create `finger_drag/gestures.py`:
+Create `gnome_x11_touchpad_gestures/gestures.py`:
 
 ```python
 """Pure gesture state machine: finger frames in, actions out. No device access."""
@@ -407,7 +412,7 @@ class GestureMachine:
 - [ ] **Step 5: User contribution, `release_delay`**
 
 This is reserved for the user (learning mode). **Stop and ask the user to
-write the body of `release_delay` in `finger_drag/gestures.py`.** Give them
+write the body of `release_delay` in `gnome_x11_touchpad_gestures/gestures.py`.** Give them
 this context:
 
 - It decides how forgiving a drag is when fingers leave the pad. It is the
@@ -441,7 +446,7 @@ Expected: `Ran 15 tests` and `OK`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add .gitignore finger_drag tests docs
+git add .gitignore gnome_x11_touchpad_gestures tests docs
 git commit -m "Add gesture state machine with three-finger drag"
 ```
 
@@ -450,7 +455,7 @@ git commit -m "Add gesture state machine with three-finger drag"
 ### Task 2: Gesture machine, four-finger workspace swipe
 
 **Files:**
-- Modify: `finger_drag/gestures.py` (methods `_swipe_tracking` and `_swipe_done` only)
+- Modify: `gnome_x11_touchpad_gestures/gestures.py` (methods `_swipe_tracking` and `_swipe_done` only)
 - Test: `tests/test_gestures.py` (append one test class)
 
 **Interfaces:**
@@ -467,7 +472,7 @@ git commit -m "Add gesture state machine with three-finger drag"
 In `tests/test_gestures.py`, change the import line to:
 
 ```python
-from finger_drag.gestures import (
+from gnome_x11_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, GestureMachine, Move, State, SwitchWorkspace)
 ```
 
@@ -602,7 +607,7 @@ Expected: FAIL. The tests expecting a `SwitchWorkspace` action get `[]`
 
 - [ ] **Step 3: Implement swipe detection**
 
-In `finger_drag/gestures.py`, replace the `_swipe_tracking` method with:
+In `gnome_x11_touchpad_gestures/gestures.py`, replace the `_swipe_tracking` method with:
 
 ```python
     def _swipe_tracking(self, count: int, dx: float, dy: float) -> list[Action]:
@@ -631,7 +636,7 @@ Expected: `Ran 27 tests` and `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add finger_drag/gestures.py tests/test_gestures.py
+git add gnome_x11_touchpad_gestures/gestures.py tests/test_gestures.py
 git commit -m "Add four-finger workspace swipe to gesture machine"
 ```
 
@@ -640,12 +645,12 @@ git commit -m "Add four-finger workspace swipe to gesture machine"
 ### Task 3: Multitouch slot tracker
 
 **Files:**
-- Create: `finger_drag/slots.py`
+- Create: `gnome_x11_touchpad_gestures/slots.py`
 - Test: `tests/test_slots.py`
 
 **Interfaces:**
 - Consumes: event code constants from `evdev.ecodes`.
-- Produces, all from `finger_drag.slots`:
+- Produces, all from `gnome_x11_touchpad_gestures.slots`:
   - `FALLBACK_WIDTH_MM = 100.0`, `FALLBACK_HEIGHT_MM = 60.0`
   - `units_per_mm(minimum: int, maximum: int, resolution: int, fallback_mm: float) -> float`
   - Frozen dataclass `Frame(count: int, cx: float, cy: float)`; `cx`, `cy` in millimetres, both `0.0` when `count == 0`
@@ -670,7 +675,7 @@ import unittest
 
 from evdev import ecodes as e
 
-from finger_drag.slots import Frame, SlotTracker, units_per_mm
+from gnome_x11_touchpad_gestures.slots import Frame, SlotTracker, units_per_mm
 
 
 def touch(tracker, slot, tracking_id, x=None, y=None):
@@ -786,11 +791,11 @@ if __name__ == "__main__":
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 -m unittest discover -s tests`
-Expected: FAIL with `ModuleNotFoundError: No module named 'finger_drag.slots'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'gnome_x11_touchpad_gestures.slots'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `finger_drag/slots.py`:
+Create `gnome_x11_touchpad_gestures/slots.py`:
 
 ```python
 """Multitouch protocol B slot tracking: raw events in, finger frames out."""
@@ -879,7 +884,7 @@ Expected: `Ran 42 tests` and `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add finger_drag/slots.py tests/test_slots.py
+git add gnome_x11_touchpad_gestures/slots.py tests/test_slots.py
 git commit -m "Add multitouch slot tracker"
 ```
 
@@ -888,13 +893,13 @@ git commit -m "Add multitouch slot tracker"
 ### Task 4: Event output
 
 **Files:**
-- Create: `finger_drag/output.py`
+- Create: `gnome_x11_touchpad_gestures/output.py`
 - Test: `tests/test_output.py`
 
 **Interfaces:**
 - Consumes from Task 1: `Action`, `ButtonDown`, `ButtonUp`, `Move`,
-  `SwitchWorkspace`, `Direction` from `finger_drag.gestures`.
-- Produces, all from `finger_drag.output`:
+  `SwitchWorkspace`, `Direction` from `gnome_x11_touchpad_gestures.gestures`.
+- Produces, all from `gnome_x11_touchpad_gestures.output`:
   - `WORKSPACE_KEYS: tuple[int, ...]` = `(KEY_LEFTCTRL, KEY_LEFTALT, KEY_LEFT, KEY_RIGHT)`
   - `KEY_HOLD_S = 0.01`
   - `Output(pointer, keyboard, sleep=time.sleep)` where `pointer` and
@@ -911,9 +916,9 @@ import unittest
 
 from evdev import ecodes as e
 
-from finger_drag.gestures import (
+from gnome_x11_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, Move, SwitchWorkspace)
-from finger_drag.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
+from gnome_x11_touchpad_gestures.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
 
 SYN = "syn"
 
@@ -1010,11 +1015,11 @@ if __name__ == "__main__":
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 -m unittest discover -s tests`
-Expected: FAIL with `ModuleNotFoundError: No module named 'finger_drag.output'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'gnome_x11_touchpad_gestures.output'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `finger_drag/output.py`:
+Create `gnome_x11_touchpad_gestures/output.py`:
 
 ```python
 """Translates gesture actions into events on two virtual devices."""
@@ -1024,7 +1029,7 @@ import time
 
 from evdev import ecodes as e
 
-from finger_drag.gestures import (
+from gnome_x11_touchpad_gestures.gestures import (
     Action, ButtonDown, ButtonUp, Direction, Move, SwitchWorkspace)
 
 WORKSPACE_KEYS = (e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_LEFT, e.KEY_RIGHT)
@@ -1096,7 +1101,7 @@ Expected: `Ran 51 tests` and `OK`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add finger_drag/output.py tests/test_output.py
+git add gnome_x11_touchpad_gestures/output.py tests/test_output.py
 git commit -m "Add event output for virtual pointer and keyboard"
 ```
 
@@ -1105,15 +1110,15 @@ git commit -m "Add event output for virtual pointer and keyboard"
 ### Task 5: Daemon
 
 **Files:**
-- Create: `finger_drag/daemon.py`
+- Create: `gnome_x11_touchpad_gestures/daemon.py`
 - Test: `tests/test_daemon.py`
 
 **Interfaces:**
 - Consumes:
-  - `GestureMachine` from `finger_drag.gestures` (Task 1)
-  - `SlotTracker`, `units_per_mm`, `FALLBACK_WIDTH_MM`, `FALLBACK_HEIGHT_MM` from `finger_drag.slots` (Task 3)
-  - `Output`, `WORKSPACE_KEYS` from `finger_drag.output` (Task 4)
-- Produces, all from `finger_drag.daemon`:
+  - `GestureMachine` from `gnome_x11_touchpad_gestures.gestures` (Task 1)
+  - `SlotTracker`, `units_per_mm`, `FALLBACK_WIDTH_MM`, `FALLBACK_HEIGHT_MM` from `gnome_x11_touchpad_gestures.slots` (Task 3)
+  - `Output`, `WORKSPACE_KEYS` from `gnome_x11_touchpad_gestures.output` (Task 4)
+- Produces, all from `gnome_x11_touchpad_gestures.daemon`:
   - `is_touchpad(capabilities: dict, props: list) -> bool`
   - `find_touchpad() -> evdev.InputDevice | None`
   - `pump(events, current_slot, tracker, machine, output, now: float) -> None`
@@ -1121,8 +1126,8 @@ git commit -m "Add event output for virtual pointer and keyboard"
     and `current_slot` is a zero-argument callable returning an int
   - `check() -> int`
   - `main(argv=None) -> int`
-  - Command line: `python3 -m finger_drag.daemon` runs the daemon;
-    `python3 -m finger_drag.daemon --check` verifies device access and exits
+  - Command line: `python3 -m gnome_x11_touchpad_gestures.daemon` runs the daemon;
+    `python3 -m gnome_x11_touchpad_gestures.daemon --check` verifies device access and exits
     0 or 1. Task 6's `install.sh` relies on `--check`.
 
 Background for the implementer:
@@ -1145,9 +1150,9 @@ from collections import namedtuple
 
 from evdev import ecodes as e
 
-from finger_drag.daemon import is_touchpad, pump
-from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, State
-from finger_drag.slots import SlotTracker
+from gnome_x11_touchpad_gestures.daemon import is_touchpad, pump
+from gnome_x11_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, State
+from gnome_x11_touchpad_gestures.slots import SlotTracker
 
 Event = namedtuple("Event", "type code value")
 
@@ -1243,11 +1248,11 @@ if __name__ == "__main__":
 - [ ] **Step 2: Run the tests to verify they fail**
 
 Run: `python3 -m unittest discover -s tests`
-Expected: FAIL with `ModuleNotFoundError: No module named 'finger_drag.daemon'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'gnome_x11_touchpad_gestures.daemon'`.
 
 - [ ] **Step 3: Write the implementation**
 
-Create `finger_drag/daemon.py`:
+Create `gnome_x11_touchpad_gestures/daemon.py`:
 
 ```python
 """Reads the touchpad, runs the gesture machine, writes to virtual devices."""
@@ -1263,19 +1268,19 @@ import time
 import evdev
 from evdev import ecodes as e
 
-from finger_drag.gestures import GestureMachine
-from finger_drag.output import WORKSPACE_KEYS, Output
-from finger_drag.slots import (
+from gnome_x11_touchpad_gestures.gestures import GestureMachine
+from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS, Output
+from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
 NO_TOUCHPAD = (
-    "finger-drag: no accessible touchpad found. Is "
-    "/etc/udev/rules.d/71-finger-drag.rules installed? "
+    "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
+    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 NO_UINPUT = (
-    f"finger-drag: cannot write to {UINPUT_PATH}. Is "
-    "/etc/udev/rules.d/71-finger-drag.rules installed? "
+    f"gnome-x11-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
+    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 
 
@@ -1355,7 +1360,7 @@ def _terminate(signum, frame):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="finger-drag",
+        prog="gnome-x11-touchpad-gestures",
         description="Three-finger drag and four-finger workspace switch.")
     parser.add_argument(
         "--check", action="store_true",
@@ -1375,11 +1380,11 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGTERM, _terminate)
     pointer = evdev.UInput(
         {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
-        name="finger-drag pointer")
+        name="gnome-x11-touchpad-gestures pointer")
     keyboard = evdev.UInput(
-        {e.EV_KEY: list(WORKSPACE_KEYS)}, name="finger-drag keyboard")
+        {e.EV_KEY: list(WORKSPACE_KEYS)}, name="gnome-x11-touchpad-gestures keyboard")
     output = Output(pointer, keyboard)
-    print(f"finger-drag: listening on {device.path} ({device.name})", flush=True)
+    print(f"gnome-x11-touchpad-gestures: listening on {device.path} ({device.name})", flush=True)
     try:
         run(device, make_tracker(device), GestureMachine(), output)
     except KeyboardInterrupt:
@@ -1406,16 +1411,16 @@ Expected: `Ran 59 tests` and `OK`.
 
 The udev rule is not installed yet, so the daemon must refuse cleanly.
 
-Run: `python3 -m finger_drag.daemon --check; echo "exit=$?"`
+Run: `python3 -m gnome_x11_touchpad_gestures.daemon --check; echo "exit=$?"`
 Expected: the `no accessible touchpad found` message on stderr, then `exit=1`.
 
-Run: `python3 -m finger_drag.daemon; echo "exit=$?"`
+Run: `python3 -m gnome_x11_touchpad_gestures.daemon; echo "exit=$?"`
 Expected: the same message, then `exit=1`. No traceback.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add finger_drag/daemon.py tests/test_daemon.py
+git add gnome_x11_touchpad_gestures/daemon.py tests/test_daemon.py
 git commit -m "Add daemon with device discovery and event loop"
 ```
 
@@ -1424,27 +1429,27 @@ git commit -m "Add daemon with device discovery and event loop"
 ### Task 6: Installation, service and README
 
 **Files:**
-- Create: `install/71-finger-drag.rules`
-- Create: `install/finger-drag.service`
+- Create: `install/71-gnome-x11-touchpad-gestures.rules`
+- Create: `install/gnome-x11-touchpad-gestures.service`
 - Create: `install/install.sh` (executable)
 - Create: `README.md`
 
 **Interfaces:**
-- Consumes: `python3 -m finger_drag.daemon --check` from Task 5 (exit 0 when
+- Consumes: `python3 -m gnome_x11_touchpad_gestures.daemon --check` from Task 5 (exit 0 when
   both devices are accessible, 1 otherwise).
-- Produces: an installed, enabled and running `finger-drag.service` user unit.
+- Produces: an installed, enabled and running `gnome-x11-touchpad-gestures.service` user unit.
 
 **This task changes the system and needs the user.** `install.sh` calls
 `sudo`, which needs a password, so the user runs it (in Claude Code:
-`! ~/finger-drag/install/install.sh`). Merge to `main` before installing so
+`! ~/gnome-x11-touchpad-gestures/install/install.sh`). Merge to `main` before installing so
 the service runs reviewed code.
 
 - [ ] **Step 1: Write the udev rule**
 
-Create `install/71-finger-drag.rules`:
+Create `install/71-gnome-x11-touchpad-gestures.rules`:
 
 ```
-# finger-drag: let the user at the active seat read the touchpad and create
+# gnome-x11-touchpad-gestures: let the user at the active seat read the touchpad and create
 # virtual input devices. Must sort before 73-seat-late.rules.
 ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="SYNA8017:00 06CB:CEB2 Touchpad", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
@@ -1452,7 +1457,7 @@ KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinpu
 
 - [ ] **Step 2: Write the systemd unit**
 
-Create `install/finger-drag.service`:
+Create `install/gnome-x11-touchpad-gestures.service`:
 
 ```ini
 [Unit]
@@ -1461,8 +1466,8 @@ PartOf=graphical-session.target
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m finger_drag.daemon
-WorkingDirectory=%h/finger-drag
+ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
+WorkingDirectory=%h/gnome-x11-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 
@@ -1476,17 +1481,17 @@ Create `install/install.sh`:
 
 ```bash
 #!/usr/bin/env bash
-# Installs finger-drag. Safe to run repeatedly.
+# Installs gnome-x11-touchpad-gestures. Safe to run repeatedly.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(dirname "$here")"
-rule="71-finger-drag.rules"
-unit="finger-drag.service"
+rule="71-gnome-x11-touchpad-gestures.rules"
+unit="gnome-x11-touchpad-gestures.service"
 unit_dir="$HOME/.config/systemd/user"
 
-if [ "$repo" != "$HOME/finger-drag" ]; then
-    echo "finger-drag must live at $HOME/finger-drag (found $repo)." >&2
+if [ "$repo" != "$HOME/gnome-x11-touchpad-gestures" ]; then
+    echo "gnome-x11-touchpad-gestures must live at $HOME/gnome-x11-touchpad-gestures (found $repo)." >&2
     exit 1
 fi
 
@@ -1500,7 +1505,7 @@ sudo udevadm trigger --action=change --subsystem-match=input --sysname-match='ev
 sudo udevadm settle
 
 echo "Checking device access..."
-if ! (cd "$repo" && python3 -m finger_drag.daemon --check); then
+if ! (cd "$repo" && python3 -m gnome_x11_touchpad_gestures.daemon --check); then
     echo >&2
     echo "The rule is installed but access has not been granted to this" >&2
     echo "session yet. Log out, log back in, and run this script again." >&2
@@ -1525,7 +1530,7 @@ Then: `chmod +x install/install.sh`
 Create `README.md`:
 
 ````markdown
-# finger-drag
+# gnome-x11-touchpad-gestures
 
 Three-finger drag and four-finger workspace switching for a GNOME-on-X11
 laptop. One unprivileged Python daemon reads the touchpad and writes to two
@@ -1538,15 +1543,15 @@ scrolling and tapping are untouched.
 | Four fingers, swipe left | Next workspace (`Ctrl+Alt+Right`) |
 | Four fingers, swipe right | Previous workspace (`Ctrl+Alt+Left`) |
 
-Design: `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
+Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
 ## Install
 
 Requires `python3-evdev` (already present on this machine). The repo must
-live at `~/finger-drag`.
+live at `~/gnome-x11-touchpad-gestures`.
 
 ```bash
-~/finger-drag/install/install.sh
+~/gnome-x11-touchpad-gestures/install/install.sh
 ```
 
 The script asks for your password once to install a udev rule. If it says a
@@ -1555,17 +1560,17 @@ re-login is needed, log out and in, then run it again.
 ## Uninstall
 
 ```bash
-systemctl --user disable --now finger-drag.service
-rm ~/.config/systemd/user/finger-drag.service
+systemctl --user disable --now gnome-x11-touchpad-gestures.service
+rm ~/.config/systemd/user/gnome-x11-touchpad-gestures.service
 systemctl --user daemon-reload
-sudo rm /etc/udev/rules.d/71-finger-drag.rules
+sudo rm /etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules
 sudo udevadm control --reload
 ```
 
 ## Tuning
 
-Edit the constants at the top of `finger_drag/gestures.py`, then run
-`systemctl --user restart finger-drag`.
+Edit the constants at the top of `gnome_x11_touchpad_gestures/gestures.py`, then run
+`systemctl --user restart gnome-x11-touchpad-gestures`.
 
 | Constant | Default | Raise it to... |
 |---|---|---|
@@ -1578,15 +1583,15 @@ Edit the constants at the top of `finger_drag/gestures.py`, then run
 ## Troubleshooting
 
 ```bash
-systemctl --user status finger-drag      # is it running?
-journalctl --user -u finger-drag -n 20   # what did it say?
-cd ~/finger-drag && python3 -m finger_drag.daemon --check
+systemctl --user status gnome-x11-touchpad-gestures      # is it running?
+journalctl --user -u gnome-x11-touchpad-gestures -n 20   # what did it say?
+cd ~/gnome-x11-touchpad-gestures && python3 -m gnome_x11_touchpad_gestures.daemon --check
 ```
 
 ## Tests
 
 ```bash
-cd ~/finger-drag && python3 -m unittest discover -s tests
+cd ~/gnome-x11-touchpad-gestures && python3 -m unittest discover -s tests
 ```
 
 ## Manual checklist
@@ -1600,7 +1605,7 @@ Run after installing or changing a tunable.
 - [ ] Two-finger scroll and one-finger pointing are unchanged.
 - [ ] Four-finger swipe left and right switches workspace, once per swipe.
 - [ ] Suspend and resume; gestures work again within a few seconds.
-- [ ] `systemctl --user stop finger-drag` mid-drag releases the button.
+- [ ] `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
 
 ## Known behaviour
 
@@ -1616,11 +1621,11 @@ Run after installing or changing a tunable.
 Run: `bash -n install/install.sh && echo "script ok"`
 Expected: `script ok`
 
-Run: `udevadm verify install/71-finger-drag.rules`
+Run: `udevadm verify install/71-gnome-x11-touchpad-gestures.rules`
 Expected: `1 udev rules files have been checked.` with `Success: 1` and
 `Fail:    0`, exit status 0.
 
-Run: `systemd-analyze verify --user install/finger-drag.service 2>&1 | grep -i finger-drag || echo "unit ok"`
+Run: `systemd-analyze verify --user install/gnome-x11-touchpad-gestures.service 2>&1 | grep -i gnome-x11-touchpad-gestures || echo "unit ok"`
 Expected: `unit ok`
 
 Run: `python3 -m unittest discover -s tests`
@@ -1642,26 +1647,26 @@ git merge --no-ff daemon -m "Merge daemon: three-finger drag and four-finger wor
 
 - [ ] **Step 8: Install (user runs this)**
 
-Ask the user to run: `~/finger-drag/install/install.sh`
+Ask the user to run: `~/gnome-x11-touchpad-gestures/install/install.sh`
 
 Expected output ends with the service status showing `Active: active (running)`
-and the log line `finger-drag: listening on /dev/input/event... (SYNA8017:00 06CB:CEB2 Touchpad)`.
+and the log line `gnome-x11-touchpad-gestures: listening on /dev/input/event... (SYNA8017:00 06CB:CEB2 Touchpad)`.
 
 If the script stops with the re-login message, the user logs out and in and
 runs it again. That is an expected path, not a failure.
 
 - [ ] **Step 9: Verify the installed system**
 
-Run: `cd ~/finger-drag && python3 -m finger_drag.daemon --check`
+Run: `cd ~/gnome-x11-touchpad-gestures && python3 -m gnome_x11_touchpad_gestures.daemon --check`
 Expected: a `touchpad:` line and a `uinput:` line, exit 0.
 
-Run: `systemctl --user is-active finger-drag && systemctl --user is-enabled finger-drag`
+Run: `systemctl --user is-active gnome-x11-touchpad-gestures && systemctl --user is-enabled gnome-x11-touchpad-gestures`
 Expected: `active` then `enabled`.
 
-Run: `xinput list --name-only | grep finger-drag`
-Expected: `finger-drag pointer` and `finger-drag keyboard`.
+Run: `xinput list --name-only | grep gnome-x11-touchpad-gestures`
+Expected: `gnome-x11-touchpad-gestures pointer` and `gnome-x11-touchpad-gestures keyboard`.
 
-Run: `journalctl --user -u finger-drag -n 20 --no-pager`
+Run: `journalctl --user -u gnome-x11-touchpad-gestures -n 20 --no-pager`
 Expected: the `listening on` line and no tracebacks.
 
 - [ ] **Step 10: Manual checklist (user)**
@@ -1671,6 +1676,6 @@ each item. For anything that feels wrong, adjust the matching constant from
 the Tuning table, restart the service, and re-test. Commit any tuned values:
 
 ```bash
-git add finger_drag/gestures.py
+git add gnome_x11_touchpad_gestures/gestures.py
 git commit -m "Tune gesture constants after manual testing"
 ```

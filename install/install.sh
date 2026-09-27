@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Installs finger-drag. Safe to run repeatedly.
+# Installs gnome-x11-touchpad-gestures. Safe to run repeatedly.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(dirname "$here")"
-rule="71-finger-drag.rules"
-unit="finger-drag.service"
+rule="71-gnome-x11-touchpad-gestures.rules"
+unit="gnome-x11-touchpad-gestures.service"
 unit_dir="$HOME/.config/systemd/user"
 rules_dir="/etc/udev/rules.d"
 # Where the program is installed. The unit names the same place as
-# %h/.local/share/finger-drag, so the two must change together.
-program_dir="$HOME/.local/share/finger-drag"
-# Exit status of `finger_drag.daemon --check` when device access is missing.
+# %h/.local/share/gnome-x11-touchpad-gestures, so the two must change together.
+program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
+# Exit status of `gnome_x11_touchpad_gestures.daemon --check` when device access is missing.
 no_access=3
 
 touchpad_count() {
@@ -53,7 +53,7 @@ refuse_root() {
 }
 
 check_access() {
-    (cd "$repo" && python3 -m finger_drag.daemon --check)
+    (cd "$repo" && python3 -m gnome_x11_touchpad_gestures.daemon --check)
 }
 
 # Whether the privileged step has anything left to do.
@@ -63,9 +63,9 @@ needs_sudo() {
 
 install_program() {
     # Replaced whole, so a module removed from the repository does not linger.
-    rm -rf "$program_dir/finger_drag"
-    mkdir -p "$program_dir/finger_drag"
-    cp "$repo"/finger_drag/*.py "$program_dir/finger_drag/"
+    rm -rf "$program_dir/gnome_x11_touchpad_gestures"
+    mkdir -p "$program_dir/gnome_x11_touchpad_gestures"
+    cp "$repo"/gnome_x11_touchpad_gestures/*.py "$program_dir/gnome_x11_touchpad_gestures/"
 }
 
 install_service() {

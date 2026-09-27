@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Removes finger-drag and revokes the device access it was given.
+# Removes gnome-x11-touchpad-gestures and revokes the device access it was given.
 set -euo pipefail
 
-rule="/etc/udev/rules.d/71-finger-drag.rules"
-unit="finger-drag.service"
+rule="/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules"
+unit="gnome-x11-touchpad-gestures.service"
 unit_file="$HOME/.config/systemd/user/$unit"
-program_dir="$HOME/.local/share/finger-drag"
+program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
 
 touchpad_nodes() {
     local path
@@ -49,7 +49,7 @@ main_as() {
         sudo setfacl -x "u:$USER" "$node"
     done
 
-    echo "finger-drag removed. This repository was left in place."
+    echo "gnome-x11-touchpad-gestures removed. This repository was left in place."
 }
 
 main() {

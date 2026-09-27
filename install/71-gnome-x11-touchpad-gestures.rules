@@ -1,5 +1,7 @@
-# finger-drag: let the user at the active seat read the touchpad and create
-# virtual input devices. Must sort before 73-seat-late.rules.
+# gnome-x11-touchpad-gestures
+#
+# Lets the user at the active seat read the touchpad and create virtual
+# input devices. Must sort before 73-seat-late.rules.
 #
 # Note what the second line allows: any program run by that user can create
 # input devices and so type and click as the user. On X11 any program can

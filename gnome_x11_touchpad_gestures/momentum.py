@@ -9,8 +9,8 @@ import collections
 import math
 from dataclasses import dataclass
 
-from finger_drag.gestures import DRAG_RELEASE_S
-from finger_drag.motion import moving_together
+from gnome_x11_touchpad_gestures.gestures import DRAG_RELEASE_S
+from gnome_x11_touchpad_gestures.motion import moving_together
 
 # How the glide feels.
 GLIDE_TAU_S = 0.5            # slowdown time constant: longer is a longer tail

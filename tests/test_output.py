@@ -2,10 +2,10 @@ import unittest
 
 from evdev import ecodes as e
 
-from finger_drag.gestures import (
+from gnome_x11_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
-from finger_drag.momentum import Scroll
-from finger_drag.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
+from gnome_x11_touchpad_gestures.momentum import Scroll
+from gnome_x11_touchpad_gestures.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
 
 SYN = "syn"
 

@@ -1,8 +1,8 @@
 import math
 import unittest
 
-from finger_drag import gestures as g
-from finger_drag.gestures import (
+from gnome_x11_touchpad_gestures import gestures as g
+from gnome_x11_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, GestureMachine, Move, Overview, State,
     SwitchWorkspace)
 

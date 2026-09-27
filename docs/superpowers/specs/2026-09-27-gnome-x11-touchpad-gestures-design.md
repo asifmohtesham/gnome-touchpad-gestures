@@ -1,4 +1,4 @@
-# finger-drag: macOS-style touchpad gestures for GNOME on X11
+# gnome-x11-touchpad-gestures: macOS-style touchpad gestures for GNOME on X11
 
 Date: 2026-09-27
 Status: implemented and in use. Written before the code and amended as it
@@ -61,7 +61,7 @@ Rejected alternatives:
 
 ```
 <repository>/          anywhere; the installer copies the program out of it
-  finger_drag/
+  gnome_x11_touchpad_gestures/
     __init__.py
     gestures.py        drag and four-finger swipes; pure, no device access
     momentum.py        glide after a two-finger flick; pure
@@ -72,8 +72,8 @@ Rejected alternatives:
     daemon.py          device discovery, event loop, shutdown
   tests/               stdlib unittest, one file per module
   install/
-    71-finger-drag.rules
-    finger-drag.service
+    71-gnome-x11-touchpad-gestures.rules
+    gnome-x11-touchpad-gestures.service
     install.sh
     uninstall.sh
   README.md
@@ -229,9 +229,9 @@ Three virtual devices, so that libinput classifies each one cleanly:
 
 | Device | Capabilities |
 |---|---|
-| `finger-drag pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
-| `finger-drag keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
-| `finger-drag wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
+| `gnome-x11-touchpad-gestures pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
+| `gnome-x11-touchpad-gestures keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
+| `gnome-x11-touchpad-gestures wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
 
 | Action | Events |
 |---|---|
@@ -325,7 +325,7 @@ never inherits part of an old one.
 Not solvable here: a glide cannot know that the page has reached its end,
 so an app's end-of-page effect may last until the glide is over.
 
-Output goes to a third virtual device, `finger-drag wheel`, as
+Output goes to a third virtual device, `gnome-x11-touchpad-gestures wheel`, as
 `REL_WHEEL_HI_RES` and `REL_HWHEEL_HI_RES`, with a `REL_WHEEL` or
 `REL_HWHEEL` notch for every 120 units for programs that predate
 high-resolution scrolling. The device also declares motion axes and buttons
@@ -348,7 +348,7 @@ until half a notch has built up, which shows as stutter.
 
 ## Permissions
 
-`install/71-finger-drag.rules`:
+`install/71-gnome-x11-touchpad-gestures.rules`:
 
 ```
 ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"
@@ -369,7 +369,7 @@ adds no meaningful exposure in the current session.
 
 ## Service
 
-`install/finger-drag.service`, installed to `~/.config/systemd/user/`:
+`install/gnome-x11-touchpad-gestures.service`, installed to `~/.config/systemd/user/`:
 
 ```ini
 [Unit]
@@ -379,8 +379,8 @@ ConditionEnvironment=XDG_SESSION_TYPE=x11
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m finger_drag.daemon
-WorkingDirectory=%h/.local/share/finger-drag
+ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
+WorkingDirectory=%h/.local/share/gnome-x11-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 
@@ -397,7 +397,7 @@ WantedBy=graphical-session.target
 3. Verify the current user can open both devices. If the check reports
    missing access (status 3), say that logging out and back in is required
    and stop. If it fails any other way, say so and do not suggest a re-login.
-4. Copy the program to `~/.local/share/finger-drag` and the unit to
+4. Copy the program to `~/.local/share/gnome-x11-touchpad-gestures` and the unit to
    `~/.config/systemd/user/`, then reload, enable and start the service.
 
 Steps 1 and 2 are skipped, and no password is asked for, when the installed
@@ -407,15 +407,15 @@ passes. That is the normal case when reinstalling after a change to the code.
 #### Where the program runs from
 
 The service runs an installed copy, named in the unit as
-`%h/.local/share/finger-drag`. `%h` is the home directory, expanded by
+`%h/.local/share/gnome-x11-touchpad-gestures`. `%h` is the home directory, expanded by
 systemd itself. No path chosen by the user is written into any installed
 file, so the repository may be anywhere and may be moved or removed.
 
 This replaced two earlier designs:
 
-1. The first required the repository to be at `~/finger-drag` and named that
-   path in the unit. A plain `git clone` of the published repository creates
-   a directory with a different name, so the installer would have refused.
+1. The first required the repository to be at one fixed path in the home
+   directory and named that path in the unit. Cloned anywhere else, the
+   installer refused to run.
 2. The second let the repository live anywhere by writing its path into the
    unit at install time. That path then had to be escaped, because systemd
    reads `%` as the start of a specifier, and escaping covers only the
@@ -482,7 +482,7 @@ Run with `python3 -m unittest discover -s tests`.
 - Two-finger scroll and one-finger pointing are unchanged.
 - Four-finger swipe left and right switches workspace, once per swipe.
 - Suspend and resume; gestures work again within a few seconds.
-- `systemctl --user stop finger-drag` mid-drag releases the button.
+- `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
 
 ## Known behaviour
 
@@ -515,7 +515,7 @@ proxy object. A proxy first asks the shell to describe itself, with a wait of
 up to 25 seconds that the timeout does not cover, and stays bound to the
 shell it met, so it misses a shell that was restarted.
 
-`finger_drag/shell.py` holds that one call. It connects on first use, passes
+`gnome_x11_touchpad_gestures/shell.py` holds that one call. It connects on first use, passes
 a timeout of `OVERVIEW_TIMEOUT_S` (0.5 s) because the call runs on the
 daemon's only thread, and treats every failure the same way: log it, drop
 the connection so the next request reconnects, and carry on. The overview is
