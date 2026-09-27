@@ -13,7 +13,7 @@ DRAG_RELEASE_S = 0.3
 POINTER_COUNTS_PER_MM = 12.0
 SWIPE_MM = 15.0
 SWIPE_AXIS_RATIO = 1.5
-SWIPE_TOGETHER_MM = 3.0  # travel over which the fingers are compared
+SWIPE_TOGETHER_MM = 2.0  # travel over which the fingers are compared
 
 
 class Direction(enum.Enum):
@@ -78,6 +78,7 @@ class GestureMachine:
         self._swipe = (0.0, 0.0)
         self._deadline: float | None = None
         self._group: tuple = (0.0, 0.0, ())
+        self._pending = (0.0, 0.0)   # swipe travel not yet seen to be shared
         self._fingers: tuple = ()
 
     def next_deadline(self) -> float | None:
@@ -118,6 +119,7 @@ class GestureMachine:
         if changed:
             self._count_since = t
             self._group = (cx, cy, fingers)
+            self._pending = (0.0, 0.0)
         self._fingers = fingers
         previous = self._ref
         self._count = count
@@ -136,6 +138,7 @@ class GestureMachine:
         self.state = State.SWIPE_TRACKING
         self._deadline = None
         self._swipe = (0.0, 0.0)
+        self._pending = (0.0, 0.0)
 
     def _idle(self, t: float, count: int, dx: float, dy: float) -> list[Action]:
         if count >= 4:
@@ -178,10 +181,16 @@ class GestureMachine:
         if count < 4:
             # Fingers lifting unevenly must not turn a swipe into a drag.
             return []
-        self._swipe = (self._swipe[0] + dx, self._swipe[1] + dy)
-        sx, sy = self._swipe
+        # Travel counts towards the swipe only once the contacts that made it
+        # are seen to move together. What a changing set of contacts leaves
+        # unconfirmed is dropped, so resting fingers never add to it.
+        self._pending = (self._pending[0] + dx, self._pending[1] + dy)
         if not self._swiping_together():
             return []
+        self._swipe = (self._swipe[0] + self._pending[0],
+                       self._swipe[1] + self._pending[1])
+        self._pending = (0.0, 0.0)
+        sx, sy = self._swipe
         if abs(sx) >= SWIPE_MM and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
             self.state = State.SWIPE_DONE
             # Content follows the fingers: moving left reveals the next one.

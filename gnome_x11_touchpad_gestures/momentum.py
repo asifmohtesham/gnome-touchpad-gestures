@@ -104,6 +104,9 @@ class MomentumMachine:
     def interrupt(self, t: float) -> list[Scroll]:
         """Finger state was lost; this is not a lift, so nothing may glide."""
         self._end_glide()
+        if self._dragged:
+            # The drag machine treats this as a lift and holds its button.
+            self._no_glide_before = t + SPOIL_LINGER_S
         self._forget_touch()
         self._count = 0
         return []

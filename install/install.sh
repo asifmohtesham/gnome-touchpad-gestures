@@ -13,6 +13,8 @@ rules_dir="/etc/udev/rules.d"
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
 # Exit status of `gnome_x11_touchpad_gestures.daemon --check` when device access is missing.
 no_access=3
+# ... and when the touchpad cannot tell fingers apart.
+unsupported=4
 
 touchpad_count() {
     udevadm trigger --dry-run --verbose --subsystem-match=input \
@@ -30,7 +32,10 @@ missing_packages() {
 explain_check_failure() {
     local status="$1" touchpads="$2"
     echo >&2
-    if [ "$status" -eq "$no_access" ] && [ "$touchpads" -eq 0 ]; then
+    if [ "$status" -eq "$unsupported" ]; then
+        echo "This touchpad reports one position, not each finger separately," >&2
+        echo "so it cannot be used. Logging out will not help." >&2
+    elif [ "$status" -eq "$no_access" ] && [ "$touchpads" -eq 0 ]; then
         echo "No touchpad was found on this machine, so there is nothing to" >&2
         echo "grant access to. Logging out will not help." >&2
     elif [ "$status" -eq "$no_access" ]; then
@@ -56,16 +61,29 @@ check_access() {
     (cd "$repo" && python3 -m gnome_x11_touchpad_gestures.daemon --check)
 }
 
-# Whether the privileged step has anything left to do.
+# Whether the privileged step has anything left to do. A check that fails
+# for any reason other than missing access is not something sudo can fix.
 needs_sudo() {
-    ! cmp -s "$here/$rule" "$rules_dir/$rule" || ! check_access >/dev/null 2>&1
+    cmp -s "$here/$rule" "$rules_dir/$rule" || return 0
+    local status=0
+    check_access >/dev/null 2>&1 || status=$?
+    [ "$status" -eq "$no_access" ]
 }
 
 install_program() {
-    # Replaced whole, so a module removed from the repository does not linger.
-    rm -rf "$program_dir/gnome_x11_touchpad_gestures"
-    mkdir -p "$program_dir/gnome_x11_touchpad_gestures"
-    cp "$repo"/gnome_x11_touchpad_gestures/*.py "$program_dir/gnome_x11_touchpad_gestures/"
+    local package="gnome_x11_touchpad_gestures"
+    local fresh="$program_dir/$package.new" old="$program_dir/$package.old"
+    rm -rf "$fresh" "$old"
+    mkdir -p "$fresh"
+    cp "$repo/$package"/*.py "$fresh/"
+    # Swapped in only once it is complete, so a copy that fails leaves the
+    # working program where it was. Replaced whole, so a module removed from
+    # the repository does not linger.
+    if [ -d "$program_dir/$package" ]; then
+        mv "$program_dir/$package" "$old"
+    fi
+    mv "$fresh" "$program_dir/$package"
+    rm -rf "$old"
 }
 
 install_service() {
@@ -121,8 +139,14 @@ main_as() {
     install_service
 
     sleep 1
-    systemctl --user --no-pager --lines=5 status "$unit"
+    # Exits non-zero for a service that is not running, which is not a failure
+    # of the install.
+    systemctl --user --no-pager --lines=5 status "$unit" || true
     echo
+    if [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
+        echo "This is not an X11 session, so the service has not started."
+        echo "It starts by itself at your next X11 login."
+    fi
     echo "Installed to $program_dir."
     echo "The service runs that copy, so this directory can be moved or removed."
     echo "After changing the code here, run this script again to install it."

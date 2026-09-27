@@ -6,5 +6,7 @@
 # Note what the second line allows: any program run by that user can create
 # input devices and so type and click as the user. On X11 any program can
 # already do that through XTest.
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"
+# A device that is a keyboard as well as a touchpad is left alone, so that
+# nothing here makes keystrokes readable.
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

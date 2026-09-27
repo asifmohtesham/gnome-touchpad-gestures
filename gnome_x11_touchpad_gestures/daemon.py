@@ -23,10 +23,17 @@ UINPUT_PATH = "/dev/uinput"
 # Distinct from a crash (1) or a usage error (2) so that install.sh can tell
 # "log out and back in" apart from every other failure.
 EXIT_NO_ACCESS = 3
+# A touchpad is readable but reports one position, not one per finger.
+EXIT_UNSUPPORTED = 4
+# A touchpad plugged in or paired later arrives on one of these buses.
+EXTERNAL_BUSES = (0x03, 0x05)  # USB, Bluetooth
 NO_TOUCHPAD = (
     "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
     "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
+UNSUPPORTED = (
+    "gnome-x11-touchpad-gestures: a touchpad was found, but it does not report "
+    "each finger separately, so gestures cannot be read from it.")
 NO_UINPUT = (
     f"gnome-x11-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
     "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
@@ -66,16 +73,56 @@ def is_touchpad(capabilities: dict, props: list) -> bool:
             and e.ABS_MT_POSITION_X in abs_codes)
 
 
-def find_touchpad():
-    for path in sorted(evdev.list_devices()):
+def is_single_touch_pad(capabilities: dict, props: list) -> bool:
+    """A touchpad that reports where a touch is, but not each finger."""
+    return (e.INPUT_PROP_POINTER in props
+            and e.ABS_X in capabilities.get(e.EV_ABS, [])
+            and e.BTN_TOOL_FINGER in capabilities.get(e.EV_KEY, [])
+            and not is_touchpad(capabilities, props))
+
+
+def preference(path: str, bustype: int) -> tuple:
+    """Sorts the touchpad to use first: built in, then lowest event number."""
+    digits = "".join(ch for ch in os.path.basename(path) if ch.isdigit())
+    return (bustype in EXTERNAL_BUSES, int(digits or 0), path)
+
+
+def readable(matches) -> list:
+    """Every readable device that `matches`, opened. The caller closes them."""
+    found = []
+    for path in evdev.list_devices():
         try:
             device = evdev.InputDevice(path)
         except OSError:
             continue
-        if is_touchpad(device.capabilities(absinfo=False), device.input_props()):
-            return device
+        if matches(device.capabilities(absinfo=False), device.input_props()):
+            found.append(device)
+        else:
+            device.close()
+    return found
+
+
+def find_touchpad():
+    found = readable(is_touchpad)
+    if not found:
+        return None
+    best = min(found, key=lambda d: preference(d.path, d.info.bustype))
+    for device in found:
+        if device is not best:
+            device.close()
+    return best
+
+
+def no_touchpad() -> int:
+    """Says why there is no touchpad to use, and returns the exit status."""
+    unusable = readable(is_single_touch_pad)
+    for device in unusable:
         device.close()
-    return None
+    if unusable:
+        print(UNSUPPORTED, file=sys.stderr)
+        return EXIT_UNSUPPORTED
+    print(NO_TOUCHPAD, file=sys.stderr)
+    return EXIT_NO_ACCESS
 
 
 def make_tracker(device) -> SlotTracker:
@@ -130,8 +177,7 @@ def run(device, tracker, machine, output, clock=time.monotonic) -> None:
 def check() -> int:
     device = find_touchpad()
     if device is None:
-        print(NO_TOUCHPAD, file=sys.stderr)
-        return EXIT_NO_ACCESS
+        return no_touchpad()
     print(f"touchpad: {device.path} ({device.name})")
     device.close()
     if not os.access(UINPUT_PATH, os.W_OK):
@@ -159,8 +205,7 @@ def main(argv=None) -> int:
 
     device = find_touchpad()
     if device is None:
-        print(NO_TOUCHPAD, file=sys.stderr)
-        return EXIT_NO_ACCESS
+        return no_touchpad()
     if not os.access(UINPUT_PATH, os.W_OK):
         print(NO_UINPUT, file=sys.stderr)
         return EXIT_NO_ACCESS
