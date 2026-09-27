@@ -12,6 +12,7 @@ import evdev
 from evdev import ecodes as e
 
 from finger_drag.gestures import GestureMachine
+from finger_drag.momentum import MomentumMachine
 from finger_drag.output import WORKSPACE_KEYS, Output
 from finger_drag.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
@@ -28,6 +29,30 @@ NO_UINPUT = (
     f"finger-drag: cannot write to {UINPUT_PATH}. Is "
     "/etc/udev/rules.d/71-finger-drag.rules installed? "
     "Log out and back in after installing it.")
+
+
+class Machines:
+    """Runs several gesture machines side by side as if they were one."""
+
+    def __init__(self, *machines) -> None:
+        self._machines = machines
+
+    def update(self, t: float, count: int, cx: float, cy: float,
+               regrouped: bool = False) -> list:
+        return [action for machine in self._machines
+                for action in machine.update(t, count, cx, cy, regrouped)]
+
+    def tick(self, t: float) -> list:
+        return [action for machine in self._machines
+                for action in machine.tick(t)]
+
+    def interrupt(self, t: float) -> list:
+        return [action for machine in self._machines
+                for action in machine.interrupt(t)]
+
+    def next_deadline(self) -> float | None:
+        deadlines = [machine.next_deadline() for machine in self._machines]
+        return min((d for d in deadlines if d is not None), default=None)
 
 
 def is_touchpad(capabilities: dict, props: list) -> bool:
@@ -71,7 +96,7 @@ def pump(events, read_state, tracker, machine, output, now: float) -> None:
             # The kernel dropped events, so slot state is stale. End whatever
             # gesture was in progress; fingers must touch again to start one.
             tracker.begin_resync()
-            output.emit(machine.update(now, 0, 0.0, 0.0))
+            output.emit(machine.interrupt(now))
             continue
         if tracker.resyncing:
             # The rest of the interrupted packet belongs to slots we can no
@@ -118,7 +143,8 @@ def _terminate(signum, frame):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="finger-drag",
-        description="Three-finger drag and four-finger workspace switch.")
+        description="Three-finger drag, four-finger workspace switch "
+                    "and momentum scrolling.")
     parser.add_argument(
         "--check", action="store_true",
         help="verify access to the touchpad and uinput, then exit")
@@ -140,10 +166,18 @@ def main(argv=None) -> int:
         name="finger-drag pointer")
     keyboard = evdev.UInput(
         {e.EV_KEY: list(WORKSPACE_KEYS)}, name="finger-drag keyboard")
-    output = Output(pointer, keyboard)
+    # The motion axes and buttons are never used; they are what makes
+    # libinput accept the device as a mouse and listen to its wheel.
+    wheel = evdev.UInput(
+        {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
+                    e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
+         e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
+        name="finger-drag wheel")
+    output = Output(pointer, keyboard, wheel)
     print(f"finger-drag: listening on {device.path} ({device.name})", flush=True)
     try:
-        run(device, make_tracker(device), GestureMachine(), output)
+        run(device, make_tracker(device),
+            Machines(GestureMachine(), MomentumMachine()), output)
     except KeyboardInterrupt:
         pass
     finally:
@@ -151,6 +185,7 @@ def main(argv=None) -> int:
         output.release_all()
         pointer.close()
         keyboard.close()
+        wheel.close()
         device.close()
     return 0
 

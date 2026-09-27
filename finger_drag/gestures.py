@@ -94,6 +94,10 @@ class GestureMachine:
             actions += self._swipe_done(count)
         return actions
 
+    def interrupt(self, t: float) -> list[Action]:
+        """Finger state was lost; end the gesture as if every finger lifted."""
+        return self.update(t, 0, 0.0, 0.0)
+
     def _delta(self, t: float, count: int, cx: float, cy: float,
                regrouped: bool) -> tuple[float, float]:
         # The centroid jumps whenever a different set of fingers is averaged,

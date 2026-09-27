@@ -93,6 +93,33 @@ def all_fingers_lift():
     return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
 
 
+def two_fingers_at(y):
+    events = []
+    for slot in range(2):
+        events += [
+            Event(e.EV_ABS, e.ABS_MT_SLOT, slot),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 300 + slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 400 + 100 * slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, y),
+        ]
+    return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+def two_finger_flick():
+    """Five frames, 10 ms apart, moving down at 200 mm/s (10 units per mm)."""
+    def frame(index):
+        def step():
+            time.sleep(0.01)
+            return two_fingers_at(100 + 20 * index)
+        return step
+    return [frame(index) for index in range(5)]
+
+
+def both_fingers_lift():
+    time.sleep(0.01)
+    return all_fingers_lift()
+
+
 def land():
     return three_fingers_at(500)
 
@@ -127,6 +154,12 @@ class MainTest(unittest.TestCase):
         return device
 
     def run_main(self, touchpad):
+        if touchpad is not None:
+            # A test that goes wrong must fail, not leave the daemon waiting.
+            watchdog = threading.Timer(5.0, touchpad.push, [interrupt])
+            watchdog.daemon = True
+            watchdog.start()
+            self.addCleanup(watchdog.cancel)
         with mock.patch.object(daemon, "find_touchpad", return_value=touchpad), \
                 mock.patch.object(daemon.os, "access", return_value=True), \
                 mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
@@ -145,6 +178,7 @@ class MainTest(unittest.TestCase):
             [(e.EV_KEY, key, 0) for key in WORKSPACE_KEYS])
         self.assertTrue(self.devices["finger-drag pointer"].closed)
         self.assertTrue(self.devices["finger-drag keyboard"].closed)
+        self.assertTrue(self.devices["finger-drag wheel"].closed)
         self.assertTrue(touchpad.closed)
 
     def test_button_is_released_by_the_deadline_with_no_further_events(self):
@@ -178,6 +212,49 @@ class MainTest(unittest.TestCase):
 
         self.assertEqual(self.button_values(), [1, 0])
         self.assert_everything_released_and_closed(touchpad)
+
+    def wheel_units(self):
+        return [value for etype, code, value in
+                self.devices["finger-drag wheel"].written
+                if etype == e.EV_REL and code == e.REL_WHEEL_HI_RES]
+
+    def test_two_finger_flick_glides_after_the_lift(self):
+        touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift])
+        wake = threading.Timer(0.4, touchpad.push, [interrupt])
+        wake.start()
+        self.addCleanup(wake.cancel)
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        units = self.wheel_units()
+        self.assertGreater(len(units), 10)
+        self.assertTrue(all(value > 0 for value in units))
+        self.assertEqual(self.button_values(), [0])
+        self.assert_everything_released_and_closed(touchpad)
+
+    def test_touching_the_pad_stops_the_glide(self):
+        touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift])
+
+        self.written_after_touch = None
+
+        def touch_then_quit():
+            try:
+                time.sleep(0.15)
+                touchpad.push(land)
+                time.sleep(0.05)
+                before = len(self.wheel_units())
+                time.sleep(0.15)
+                self.written_after_touch = len(self.wheel_units()) - before
+            finally:
+                touchpad.push(interrupt)
+
+        helper = threading.Thread(target=touch_then_quit, daemon=True)
+        helper.start()
+        self.assertEqual(self.run_main(touchpad), 0)
+        helper.join(timeout=2)
+
+        self.assertGreater(len(self.wheel_units()), 5)
+        self.assertEqual(self.written_after_touch, 0)
 
     def test_fingers_down_at_startup_do_not_start_a_drag(self):
         touchpad = FakeTouchpad(

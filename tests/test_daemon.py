@@ -3,8 +3,9 @@ from collections import namedtuple
 
 from evdev import ecodes as e
 
-from finger_drag.daemon import is_touchpad, pump
+from finger_drag.daemon import Machines, is_touchpad, pump
 from finger_drag.gestures import ButtonDown, ButtonUp, GestureMachine, State
+from finger_drag.momentum import MomentumMachine
 from finger_drag.slots import SlotTracker
 
 Event = namedtuple("Event", "type code value")
@@ -154,6 +155,103 @@ class PumpTest(unittest.TestCase):
         ], 0.1)
         frame = self.tracker.feed(e.EV_SYN, e.SYN_REPORT, 0)
         self.assertEqual(frame.count, 2)
+
+
+def two_fingers_at(y):
+    events = []
+    for slot in range(2):
+        events += [
+            Event(e.EV_ABS, e.ABS_MT_SLOT, slot),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 300 + slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, 400 + 100 * slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, y),
+        ]
+    return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+class PumpMomentumTest(unittest.TestCase):
+    def setUp(self):
+        self.tracker = SlotTracker(10.0, 10.0)
+        self.machine = Machines(GestureMachine(), MomentumMachine())
+        self.output = RecordingOutput()
+
+    def pump(self, events, now):
+        pump(events, lambda: (0, False), self.tracker, self.machine,
+             self.output, now)
+
+    def flick(self):
+        for index in range(6):
+            self.pump(two_fingers_at(100 + 20 * index), index * 0.01)
+
+    def test_lift_after_a_flick_starts_a_glide(self):
+        self.flick()
+        self.pump([
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 0),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_ABS, e.ABS_MT_SLOT, 1),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+            Event(e.EV_SYN, e.SYN_REPORT, 0),
+        ], 0.06)
+        self.assertIsNotNone(self.machine.next_deadline())
+
+    def test_dropped_events_mid_scroll_do_not_start_a_glide(self):
+        self.flick()
+        self.pump([Event(e.EV_SYN, e.SYN_DROPPED, 0)], 0.06)
+        self.assertIsNone(self.machine.next_deadline())
+        self.assertEqual(self.output.actions, [])
+
+
+class FakeMachine:
+    def __init__(self, action, deadline):
+        self.action = action
+        self.deadline = deadline
+        self.updates = []
+
+    def update(self, t, count, cx, cy, regrouped=False):
+        self.updates.append((t, count, cx, cy, regrouped))
+        return [self.action]
+
+    def interrupt(self, t):
+        return [f"{self.action} interrupted"]
+
+    def tick(self, t):
+        return [self.action]
+
+    def next_deadline(self):
+        return self.deadline
+
+
+class MachinesTest(unittest.TestCase):
+    def setUp(self):
+        self.first = FakeMachine("first", None)
+        self.second = FakeMachine("second", None)
+        self.machines = Machines(self.first, self.second)
+
+    def test_every_machine_sees_every_frame(self):
+        actions = self.machines.update(1.0, 2, 3.0, 4.0, True)
+        self.assertEqual(actions, ["first", "second"])
+        self.assertEqual(self.first.updates, [(1.0, 2, 3.0, 4.0, True)])
+        self.assertEqual(self.second.updates, [(1.0, 2, 3.0, 4.0, True)])
+
+    def test_tick_reaches_every_machine(self):
+        self.assertEqual(self.machines.tick(1.0), ["first", "second"])
+
+    def test_interrupt_reaches_every_machine(self):
+        self.assertEqual(
+            self.machines.interrupt(1.0),
+            ["first interrupted", "second interrupted"])
+
+    def test_no_deadline_when_no_machine_has_one(self):
+        self.assertIsNone(self.machines.next_deadline())
+
+    def test_earliest_deadline_wins(self):
+        self.first.deadline = 5.0
+        self.second.deadline = 2.0
+        self.assertEqual(self.machines.next_deadline(), 2.0)
+
+    def test_a_single_deadline_is_used(self):
+        self.second.deadline = 7.0
+        self.assertEqual(self.machines.next_deadline(), 7.0)
 
 
 if __name__ == "__main__":

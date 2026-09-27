@@ -151,6 +151,15 @@ class ThreeFingerDragTest(unittest.TestCase):
         self.assertIs(self.machine.state, State.IDLE)
 
 
+class InterruptTest(unittest.TestCase):
+    def test_interrupt_mid_drag_releases_the_button_after_the_wait(self):
+        machine = GestureMachine()
+        start_drag(machine)
+        self.assertEqual(machine.interrupt(1.0), [])
+        self.assertIs(machine.state, State.RELEASE_WAIT)
+        self.assertEqual(machine.tick(1.0 + g.DRAG_RELEASE_S), [ButtonUp()])
+
+
 class ReleaseDelayTest(unittest.TestCase):
     def test_full_lift_uses_the_spec_delay(self):
         self.assertAlmostEqual(g.release_delay(0), g.DRAG_RELEASE_S)
