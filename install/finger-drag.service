@@ -1,6 +1,8 @@
 [Unit]
 Description=Touchpad gestures: three-finger drag, four-finger swipes, momentum scrolling
 PartOf=graphical-session.target
+# GNOME on Wayland has gestures of its own, and these would fight them.
+ConditionEnvironment=XDG_SESSION_TYPE=x11
 After=graphical-session.target
 
 [Service]

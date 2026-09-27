@@ -10,10 +10,26 @@ unit_dir="$HOME/.config/systemd/user"
 # Exit status of `finger_drag.daemon --check` when device access is missing.
 no_access=3
 
+touchpad_count() {
+    udevadm trigger --dry-run --verbose --subsystem-match=input \
+        --sysname-match='event*' --property-match=ID_INPUT_TOUCHPAD=1 | wc -l
+}
+
+# Prints the package for each Python module that cannot be imported.
+missing_packages() {
+    local module
+    for module in "$@"; do
+        python3 -c "import $module" 2>/dev/null || echo "python3-$module"
+    done
+}
+
 explain_check_failure() {
-    local status="$1"
+    local status="$1" touchpads="$2"
     echo >&2
-    if [ "$status" -eq "$no_access" ]; then
+    if [ "$status" -eq "$no_access" ] && [ "$touchpads" -eq 0 ]; then
+        echo "No touchpad was found on this machine, so there is nothing to" >&2
+        echo "grant access to. Logging out will not help." >&2
+    elif [ "$status" -eq "$no_access" ]; then
         echo "The rule is installed but access has not been granted to this" >&2
         echo "session yet. Log out, log back in, and run this script again." >&2
     else
@@ -47,10 +63,16 @@ main_as() {
         exit 1
     fi
     # Checked before anything is changed on the system.
-    if ! python3 -c 'import evdev' 2>/dev/null; then
-        echo "python3-evdev is missing. Install it with:" >&2
-        echo "    sudo apt install python3-evdev" >&2
+    local missing
+    missing="$(missing_packages evdev dbus | tr '\n' ' ')"
+    if [ -n "$missing" ]; then
+        echo "Missing: $missing" >&2
+        echo "Install with:  sudo apt install $missing" >&2
         exit 1
+    fi
+    if [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
+        echo "Warning: this session is '${XDG_SESSION_TYPE:-unknown}', not x11." >&2
+        echo "The service only starts in an X11 session." >&2
     fi
 
     echo "Installing udev rule (needs sudo)..."
@@ -69,7 +91,7 @@ main_as() {
     local status=0
     (cd "$repo" && python3 -m finger_drag.daemon --check) || status=$?
     if [ "$status" -ne 0 ]; then
-        explain_check_failure "$status"
+        explain_check_failure "$status" "$(touchpad_count)"
         exit 1
     fi
 

@@ -24,6 +24,82 @@ def start_drag(machine):
     ])
 
 
+def line(origin, velocity, frames=12, step=0.01):
+    """One finger's positions, a frame apart, moving at `velocity` mm/s."""
+    return [(origin[0] + velocity[0] * i * step, origin[1] + velocity[1] * i * step)
+            for i in range(frames)]
+
+
+def touch(machine, paths, start=0.0, step=0.01):
+    """Several fingers, each following its own path. Returns every action."""
+    actions = []
+    for i, positions in enumerate(zip(*paths)):
+        cx = sum(p[0] for p in positions) / len(positions)
+        cy = sum(p[1] for p in positions) / len(positions)
+        actions += machine.update(start + i * step, len(positions), cx, cy,
+                                  fingers=tuple(positions))
+    return actions
+
+
+def row(y, velocity, count=4, **kwargs):
+    """Fingers side by side, 15 mm apart, all moving alike."""
+    return [line((20.0 + 15.0 * i, y), velocity, **kwargs) for i in range(count)]
+
+
+class SwipeNeedsEveryFingerTest(unittest.TestCase):
+    def setUp(self):
+        self.machine = GestureMachine()
+
+    def test_four_fingers_moving_up_together_open_the_overview(self):
+        self.assertEqual(touch(self.machine, row(40.0, (0.0, -200.0))),
+                         [Overview(show=True)])
+
+    def test_four_fingers_moving_left_together_switch_workspace(self):
+        self.assertEqual(touch(self.machine, row(25.0, (-200.0, 0.0))),
+                         [SwitchWorkspace(Direction.NEXT)])
+
+    def test_one_finger_moving_among_three_resting_does_nothing(self):
+        paths = row(45.0, (0.0, 0.0), count=3, frames=40)
+        paths.append(line((80.0, 45.0), (0.0, -200.0), frames=40))
+        self.assertEqual(touch(self.machine, paths), [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_two_fingers_scrolling_beside_two_resting_does_nothing(self):
+        paths = row(45.0, (0.0, 0.0), count=2, frames=30)
+        paths += [line((60.0, 40.0), (0.0, -200.0), frames=30),
+                  line((75.0, 40.0), (0.0, -200.0), frames=30)]
+        self.assertEqual(touch(self.machine, paths), [])
+
+    def test_one_finger_moving_sideways_among_three_resting_does_nothing(self):
+        paths = row(45.0, (0.0, 0.0), count=3, frames=40)
+        paths.append(line((90.0, 20.0), (-200.0, 0.0), frames=40))
+        self.assertEqual(touch(self.machine, paths), [])
+
+    def test_stray_fourth_contact_during_a_drag_does_not_open_the_overview(self):
+        drag = row(45.0, (0.0, -200.0), count=3, frames=10, step=0.01)
+        actions = touch(self.machine, drag)
+        self.assertEqual(actions[0], ButtonDown())
+        carried_on = [line(path[-1], (0.0, -200.0), frames=15) for path in drag]
+        carried_on.append(line((95.0, 48.0), (0.0, 0.0), frames=15))
+        actions = touch(self.machine, carried_on, start=0.1)
+        self.assertEqual(actions, [ButtonUp()])
+
+    def test_fifth_finger_landing_mid_swipe_still_switches_once(self):
+        first = row(25.0, (-200.0, 0.0), frames=5)
+        actions = touch(self.machine, first)
+        second = [line(path[-1], (-200.0, 0.0), frames=8) for path in first]
+        second.append(line((95.0, 25.0), (-200.0, 0.0), frames=8))
+        actions += touch(self.machine, second, start=0.05)
+        self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
+
+    def test_fingers_fanning_slightly_still_swipe(self):
+        paths = [line((20.0, 40.0), (-30.0, -200.0)),
+                 line((35.0, 40.0), (-10.0, -220.0)),
+                 line((50.0, 40.0), (10.0, -180.0)),
+                 line((65.0, 40.0), (30.0, -160.0))]
+        self.assertEqual(touch(self.machine, paths), [Overview(show=True)])
+
+
 class ThreeFingerDragTest(unittest.TestCase):
     def setUp(self):
         self.machine = GestureMachine()

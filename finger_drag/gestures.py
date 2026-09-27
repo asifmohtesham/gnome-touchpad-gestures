@@ -5,12 +5,15 @@ import enum
 import math
 from dataclasses import dataclass
 
+from finger_drag.motion import moving_together
+
 DRAG_START_MM = 2.0
 DRAG_SETTLE_S = 0.05
 DRAG_RELEASE_S = 0.3
 POINTER_COUNTS_PER_MM = 12.0
 SWIPE_MM = 15.0
 SWIPE_AXIS_RATIO = 1.5
+SWIPE_TOGETHER_MM = 3.0  # travel over which the fingers are compared
 
 
 class Direction(enum.Enum):
@@ -74,6 +77,8 @@ class GestureMachine:
         self._travel = (0.0, 0.0)
         self._swipe = (0.0, 0.0)
         self._deadline: float | None = None
+        self._group: tuple = (0.0, 0.0, ())
+        self._fingers: tuple = ()
 
     def next_deadline(self) -> float | None:
         return self._deadline
@@ -88,7 +93,7 @@ class GestureMachine:
                regrouped: bool = False, fingers: tuple = (),
                pressed: bool = False) -> list[Action]:
         actions = self.tick(t)
-        dx, dy = self._delta(t, count, cx, cy, regrouped)
+        dx, dy = self._delta(t, count, cx, cy, regrouped, fingers)
         if self.state is State.IDLE:
             actions += self._idle(t, count, dx, dy)
         elif self.state is State.DRAGGING:
@@ -106,12 +111,14 @@ class GestureMachine:
         return self.update(t, 0, 0.0, 0.0)
 
     def _delta(self, t: float, count: int, cx: float, cy: float,
-               regrouped: bool) -> tuple[float, float]:
+               regrouped: bool, fingers: tuple) -> tuple[float, float]:
         # The centroid jumps whenever a different set of fingers is averaged,
         # so a frame where the count changed carries no usable motion.
         changed = count != self._count or regrouped
         if changed:
             self._count_since = t
+            self._group = (cx, cy, fingers)
+        self._fingers = fingers
         previous = self._ref
         self._count = count
         self._ref = (cx, cy) if count else None
@@ -173,6 +180,8 @@ class GestureMachine:
             return []
         self._swipe = (self._swipe[0] + dx, self._swipe[1] + dy)
         sx, sy = self._swipe
+        if not self._swiping_together():
+            return []
         if abs(sx) >= SWIPE_MM and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
             self.state = State.SWIPE_DONE
             # Content follows the fingers: moving left reveals the next one.
@@ -182,6 +191,16 @@ class GestureMachine:
             # The pad's y grows towards the user, so moving up is negative.
             return [Overview(show=sy < 0)]
         return []
+
+    def _swiping_together(self) -> bool:
+        """Whether every contact is part of the swipe, not resting beside it."""
+        x, y, before = self._group
+        if not self._fingers or len(before) != len(self._fingers):
+            return True
+        shared = (self._ref[0] - x, self._ref[1] - y)
+        if math.hypot(*shared) < SWIPE_TOGETHER_MM:
+            return False
+        return moving_together(before, self._fingers, shared)
 
     def _swipe_done(self, count: int) -> list[Action]:
         if count == 0:

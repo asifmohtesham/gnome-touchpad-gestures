@@ -1,7 +1,8 @@
 # finger-drag: let the user at the active seat read the touchpad and create
 # virtual input devices. Must sort before 73-seat-late.rules.
 #
-# Replace the name below with your own touchpad's, as shown by:
-#     grep -i touchpad /proc/bus/input/devices
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="SYNA8017:00 06CB:CEB2 Touchpad", TAG+="uaccess"
+# Note what the second line allows: any program run by that user can create
+# input devices and so type and click as the user. On X11 any program can
+# already do that through XTest.
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
