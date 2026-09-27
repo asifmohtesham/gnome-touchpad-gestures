@@ -1,4 +1,7 @@
 # finger-drag: let the user at the active seat read the touchpad and create
 # virtual input devices. Must sort before 73-seat-late.rules.
+#
+# Replace the name below with your own touchpad's, as shown by:
+#     grep -i touchpad /proc/bus/input/devices
 ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="SYNA8017:00 06CB:CEB2 Touchpad", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

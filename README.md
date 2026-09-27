@@ -1,9 +1,12 @@
-# finger-drag
+# gnome-x11-touchpad-gestures
 
-Three-finger drag and four-finger workspace switching for a GNOME-on-X11
-laptop. One unprivileged Python daemon reads the touchpad and writes to
-three virtual input devices. It never grabs the touchpad, so normal pointing,
-scrolling and tapping are untouched.
+macOS-style touchpad gestures for GNOME on X11: three-finger drag,
+four-finger swipes and momentum scrolling.
+
+GNOME has touchpad gestures on Wayland but none on X11. This fills the gap
+with one small unprivileged Python daemon, called `finger-drag`. It reads
+the touchpad and writes to three virtual input devices. It never grabs the
+touchpad, so normal pointing, scrolling and tapping are untouched.
 
 | Gesture | Result |
 |---|---|
@@ -17,10 +20,50 @@ scrolling and tapping are untouched.
 
 Design: `docs/superpowers/specs/2026-09-27-finger-drag-design.md`
 
+## Status
+
+A personal project, written with Claude Code and used daily on one laptop.
+It has a test suite and has been through two independent code reviews, but
+it has only ever run on the hardware below. Expect to tune it for yours.
+
+| | Tested on |
+|---|---|
+| Distribution | Ubuntu 24.04 |
+| Desktop | GNOME Shell 46 on X11 |
+| libinput | 1.25 |
+| Touchpad | Synaptics `SYNA8017:00 06CB:CEB2`, a clickpad reporting up to five fingers |
+
+## Requirements
+
+- GNOME on **X11**. On Wayland GNOME has its own gestures, and they would
+  conflict with these.
+- A touchpad that reports each finger separately (multitouch protocol B).
+  Nearly all laptops from the last ten years do.
+- `python3-evdev` and `python3-dbus`. Ubuntu's desktop install has both;
+  otherwise `sudo apt install python3-evdev python3-dbus`.
+- `Ctrl+Alt+Left` and `Ctrl+Alt+Right` bound to switching workspace, which is
+  GNOME's default.
+
 ## Install
 
-Requires `python3-evdev` (already present on this machine). The repo must
-live at `~/finger-drag`.
+Clone into `~/finger-drag`. The service runs the code from there, so the
+location matters.
+
+```bash
+git clone https://github.com/asifmohtesham/gnome-x11-touchpad-gestures.git ~/finger-drag
+```
+
+Then name your touchpad in the udev rule. Find its name:
+
+```bash
+grep -i touchpad /proc/bus/input/devices
+```
+
+and put it in place of `SYNA8017:00 06CB:CEB2 Touchpad` in
+`install/71-finger-drag.rules`. The rule is what lets your user read that
+one device and create virtual ones, without joining the `input` group.
+
+Then install:
 
 ```bash
 ~/finger-drag/install/install.sh
@@ -63,10 +106,11 @@ Momentum scrolling has its own constants at the top of
 
 | Constant | Default | Raise it to... |
 |---|---|---|
-| `SCROLL_UNITS_PER_MM` | 94.0 | make the glide start faster. Set it so the page neither speeds up nor slows down at the moment you lift |
+| `SCROLL_UNITS_PER_MM` | 84.0 | make the glide start faster. It is set to what libinput scrolls per millimetre, so the page keeps its speed at the moment you lift |
 | `GLIDE_TAU_S` | 0.5 | make the glide last longer and travel further |
 | `GLIDE_MIN_MM_S` | 40.0 | require a harder flick before anything glides |
-| `AXIS_LOCK_RATIO` | 2.0 | allow more diagonal glides |
+| `GLIDE_STOP_UNITS_S` | 480.0 | end the glide sooner, while it is still moving briskly |
+| `GLIDE_MIN_TRAVEL_MM` | 3.0 | require a longer scroll before a lift can glide |
 
 Set `NATURAL_SCROLL = False` there if you turn natural scrolling off for
 the touchpad. To change the shape of the slowdown itself, edit
@@ -125,15 +169,24 @@ Run after installing or changing a tunable.
 - The overview is opened and closed by asking GNOME Shell directly, so that
   part works on GNOME only. If GNOME does not answer within half a second
   the request is dropped and logged; the other gestures carry on.
-- A glide goes to whatever window is under the pointer, so it follows the
-  pointer if an external mouse moves it mid-glide.
-- Pressing Ctrl during a glide zooms in apps that zoom on Ctrl+scroll. The
-  daemon cannot see the keyboard, by design.
+- A glide lasts up to about two seconds. During that time it goes to
+  whatever window is under the pointer, so it follows the pointer if an
+  external mouse moves it, and pressing Ctrl zooms in apps that zoom on
+  Ctrl+scroll. The daemon cannot see the keyboard, by design.
+- A glide runs along one axis, the stronger one. Diagonal flicks do not
+  glide diagonally.
+- A glide needs a real scroll first: both fingers moving together for at
+  least 3 mm, without the pad being clicked. A resting thumb, a tap or a
+  pinch does not glide.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
-  natural scrolling is on for the touchpad and off for mice, as it is on
-  this machine.
+  natural scrolling is on for the touchpad and off for mice. If yours
+  differ, set `NATURAL_SCROLL` in `finger_drag/momentum.py`.
 - X applies its mouse acceleration to the virtual pointer, so drag speed
   also depends on the mouse speed set in GNOME Settings.
   `POINTER_COUNTS_PER_MM` is tuned with that in place.
 - If fingers are on the pad when the service starts, gestures begin working
   once the pad has been completely empty for a moment.
+
+## Licence
+
+MIT. See `LICENSE`.

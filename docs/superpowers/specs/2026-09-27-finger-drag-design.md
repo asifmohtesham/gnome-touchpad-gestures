@@ -217,12 +217,13 @@ The event loop waits on the device with a timeout taken from
 
 ### Writing
 
-Two virtual devices, so that libinput classifies each one cleanly:
+Three virtual devices, so that libinput classifies each one cleanly:
 
 | Device | Capabilities |
 |---|---|
 | `finger-drag pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
 | `finger-drag keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
+| `finger-drag wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
 
 | Action | Events |
 |---|---|
@@ -259,14 +260,25 @@ these hold:
   leave a frame or two apart but a pause before lifting cancels the glide
 - the speed is at least `GLIDE_MIN_MM_S`
 - the touch never had three or more fingers, so drags and swipes never glide
+- the two fingers travelled at least `GLIDE_MIN_TRAVEL_MM`, further than a
+  tap ever does
+- both fingers took part: each covered at least `TOGETHER_RATIO` of the
+  motion they share, so a resting thumb or a pinch does not count
+- the pad itself was not clicked during the touch
+- no drag was still holding its button, which it does for
+  `SPOIL_LINGER_S` after its fingers lift
 
 A glide emits `Scroll(dx, dy)` every `GLIDE_FRAME_S`, in high-resolution
 wheel units (120 per notch). Its speed is the starting speed times
 `glide_speed(elapsed)`, an exponential decay with time constant
 `GLIDE_TAU_S`, so the distance travelled is starting speed times
 `GLIDE_TAU_S`. It ends below `GLIDE_STOP_UNITS_S`, or at once on any touch.
-A flick at least `AXIS_LOCK_RATIO` times stronger on one axis glides along
-that axis only.
+A glide that is served late, after a stall, skips the distance it missed
+instead of delivering it as one jump. Starting speed is capped at
+`GLIDE_MAX_MM_S`.
+
+A glide always runs along the stronger axis only. (The first version let
+nearly diagonal flicks glide on both axes; see below for why that changed.)
 
 `interrupt(t)` is what the daemon calls on `SYN_DROPPED`. For the gesture
 machine it is the same as every finger lifting. For momentum it is not a
@@ -276,11 +288,14 @@ lift: the glide ends and nothing new may start.
 |---|---|---|
 | `GLIDE_TAU_S` | 0.5 | Slowdown time constant |
 | `GLIDE_MIN_MM_S` | 40.0 | Slowest flick that glides |
-| `GLIDE_STOP_UNITS_S` | 40.0 | Speed at which a glide ends |
+| `GLIDE_STOP_UNITS_S` | 480.0 | Speed at which a glide ends. Was 40, which left a three-second crawl |
+| `GLIDE_MAX_MM_S` | 600.0 | Cap on the starting speed |
+| `GLIDE_MIN_TRAVEL_MM` | 3.0 | Least two-finger travel that counts as a scroll |
+| `TOGETHER_RATIO` | 0.5 | Share of the common motion each finger must cover |
+| `SPOIL_LINGER_S` | 0.3 | How long after a drag nothing may glide |
 | `GLIDE_FRAME_S` | 0.008 | Time between glide steps |
-| `SCROLL_UNITS_PER_MM` | 94.0 | Wheel units per millimetre of finger travel. An estimate of what libinput scrolls, to be tuned by feel |
+| `SCROLL_UNITS_PER_MM` | 84.0 | Wheel units per millimetre of finger travel: 39.37 units per mm at 1000 dpi, times libinput's unaccelerated touchpad factor 0.9 x 0.2968, times 8 wheel units each. Was 94, which missed the 0.9 |
 | `NATURAL_SCROLL` | True | The page follows the fingers |
-| `AXIS_LOCK_RATIO` | 2.0 | How lopsided a flick must be to glide on one axis |
 | `SPEED_WINDOW_S` | 0.06 | Span over which speed is measured |
 | `SPEED_MIN_SPAN_S` | 0.02 | Shortest span that gives a usable speed |
 | `LIFT_GRACE_S` | 0.10 | How far apart fingers may lift |
@@ -295,11 +310,16 @@ Not mimicked: the rubber-band bounce at the end of a page, which each app
 draws itself, and a glide staying with its original window, since X11 sends
 scrolling to the window under the pointer.
 
-Open risk: an app that already glides by itself may travel too far. On X11
-apps cannot tell wheel scrolling from finger scrolling, so they are expected
-to treat the glide as continued scrolling and cancel their own, but this is
-unmeasured. If an app overshoots, the follow-up is a skip list keyed on the
-window under the pointer.
+Double momentum: GTK3, GTK4 and Firefox start their own glide when the
+fingers lift, and cancel it on the next scroll event from any device. The
+daemon's first wheel event therefore replaces their glide instead of adding
+to it. This was established by reading their source, not by measurement. If
+an app is seen to overshoot, the follow-up is a skip list keyed on the window
+under the pointer.
+
+A glide runs on one axis because libinput keeps a single scroll direction
+per device: a wheel reporting both axes at once makes it hold events back
+until half a notch has built up, which shows as stutter.
 
 ## Permissions
 
