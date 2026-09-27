@@ -15,9 +15,9 @@ from gnome_x11_touchpad_gestures import daemon
 from gnome_x11_touchpad_gestures.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
 from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS
 
-POINTER = "gnome-x11-touchpad-gestures pointer"
-KEYBOARD = "gnome-x11-touchpad-gestures keyboard"
-WHEEL = "gnome-x11-touchpad-gestures wheel"
+POINTER = daemon.POINTER_NAME
+KEYBOARD = daemon.KEYBOARD_NAME
+WHEEL = daemon.WHEEL_NAME
 
 Event = namedtuple("Event", "type code value")
 AbsInfo = namedtuple("AbsInfo", "value min max fuzz flat resolution")
