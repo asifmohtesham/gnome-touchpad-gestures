@@ -59,12 +59,12 @@ def call(script, function, *args):
 class InstallScriptTest(unittest.TestCase):
     def test_missing_access_is_explained_as_a_re_login(self):
         result = call("install.sh", "explain_check_failure",
-                      str(daemon.EXIT_NO_ACCESS))
+                      str(daemon.EXIT_NO_ACCESS), "1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("Log out, log back in", result.stderr)
 
     def test_any_other_failure_is_not_blamed_on_the_login_session(self):
-        result = call("install.sh", "explain_check_failure", "1")
+        result = call("install.sh", "explain_check_failure", "1", "1")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn("Log out, log back in", result.stderr)
         self.assertIn("exit status 1", result.stderr)
@@ -93,6 +93,37 @@ class InstallScriptTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
+
+
+class InstalledFilesTest(unittest.TestCase):
+    def test_rule_matches_any_touchpad_so_nobody_has_to_edit_it(self):
+        rule = (INSTALL / "71-finger-drag.rules").read_text()
+        active = [line for line in rule.splitlines()
+                  if line and not line.startswith("#")]
+        self.assertEqual(len(active), 2)
+        self.assertIn('ENV{ID_INPUT_TOUCHPAD}=="1"', active[0])
+        self.assertNotIn("ATTRS{name}", rule)
+
+    def test_service_runs_in_an_x11_session_only(self):
+        unit = (INSTALL / "finger-drag.service").read_text()
+        self.assertIn("ConditionEnvironment=XDG_SESSION_TYPE=x11", unit)
+
+    def test_installer_names_each_missing_python_package(self):
+        result = call("install.sh", "missing_packages", "evdev", "dbus",
+                      "no_such_module_a", "no_such_module_b")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.split(),
+                         ["python3-no_such_module_a", "python3-no_such_module_b"])
+
+    def test_installer_finds_nothing_missing_here(self):
+        result = call("install.sh", "missing_packages", "evdev", "dbus")
+        self.assertEqual(result.stdout, "")
+
+    def test_no_touchpad_is_explained_as_such(self):
+        result = call("install.sh", "explain_check_failure",
+                      str(daemon.EXIT_NO_ACCESS), "0")
+        self.assertIn("no touchpad", result.stderr.lower())
+        self.assertNotIn("Log out, log back in", result.stderr)
 
 
 class UninstallScriptTest(unittest.TestCase):

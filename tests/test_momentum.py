@@ -191,6 +191,29 @@ class NotAScrollTest(unittest.TestCase):
         flick(self.machine, 0.0, 200.0, start=dropped + 0.05)
         self.assertIsNone(self.machine.next_deadline())
 
+    def test_long_scroll_begun_just_after_a_drag_glides(self):
+        t, _ = scroll(self.machine, 0.0, 200.0, count=3)
+        dropped = lift(self.machine, t)
+        t, _ = scroll(self.machine, 0.0, 200.0, start=dropped + 0.05, frames=60)
+        self.assertGreater(t - dropped, m.SPOIL_LINGER_S)
+        lift(self.machine, t)
+        self.assertIsNotNone(self.machine.next_deadline())
+
+    def test_one_refused_flick_does_not_refuse_the_next(self):
+        t, _ = scroll(self.machine, 0.0, 200.0, count=3)
+        dropped = lift(self.machine, t)
+        refused = flick(self.machine, 0.0, 200.0, start=dropped + 0.05)
+        self.assertIsNone(self.machine.next_deadline())
+        flick(self.machine, 0.0, 200.0, start=refused + 0.2)
+        self.assertIsNotNone(self.machine.next_deadline())
+
+    def test_click_does_not_switch_momentum_off_afterwards(self):
+        paths = [line((40.0, 10.0), (0.0, 0.0), frames=5),
+                 line((60.0, 12.0), (0.0, 0.0), frames=5)]
+        clicked = lift(self.machine, touch(self.machine, paths, pressed=True))
+        flick(self.machine, 0.0, 200.0, start=clicked + 0.05)
+        self.assertIsNotNone(self.machine.next_deadline())
+
     def test_flick_well_after_a_drag_glides(self):
         t, _ = scroll(self.machine, 0.0, 200.0, count=3)
         dropped = lift(self.machine, t)
