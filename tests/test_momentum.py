@@ -400,6 +400,139 @@ class DirectionTest(unittest.TestCase):
         self.assertAlmostEqual(diagonal, straight, delta=straight * 0.01)
 
 
+class RepeatedFlicksTest(unittest.TestCase):
+    """Flicking again while the page still glides makes it go faster."""
+
+    NORMAL = 200.0 * m.SCROLL_UNITS_PER_MM
+
+    def setUp(self):
+        self.machine = MomentumMachine()
+
+    def starting_speed(self):
+        """Of the glide that has just begun, in wheel units per second."""
+        (step,) = self.machine.tick(self.machine.next_deadline())
+        elapsed = m.GLIDE_FRAME_S
+        return (step.dx or step.dy) / (elapsed * m.glide_speed(elapsed))
+
+    def flicks(self, count, gap=0.25, vx=0.0, vy=200.0, start=0.0):
+        """Flick `count` times, `gap` seconds apart; return (speeds, time)."""
+        speeds = []
+        t = start
+        for _ in range(count):
+            lifted = flick(self.machine, vx, vy, start=t)
+            speeds.append(self.starting_speed())
+            t = lifted + gap
+        return speeds, t
+
+    def let_the_glide_end(self):
+        last = None
+        while self.machine.next_deadline() is not None:
+            last = self.machine.next_deadline()
+            self.machine.tick(last)
+        return last
+
+    def assertSpeeds(self, speeds, multiples):
+        self.assertEqual(len(speeds), len(multiples))
+        for speed, multiple in zip(speeds, multiples):
+            self.assertAlmostEqual(speed, multiple * self.NORMAL,
+                                   delta=0.01 * self.NORMAL)
+
+    def test_first_flick_is_normal(self):
+        speeds, _ = self.flicks(1)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_each_repeat_adds_to_the_speed(self):
+        speeds, _ = self.flicks(4)
+        step = m.FLICK_BOOST_STEP
+        self.assertSpeeds(speeds, [1.0, 1.0 + step, 1.0 + 2 * step, 1.0 + 3 * step])
+
+    def test_speed_rises_gradually_not_at_once(self):
+        speeds, _ = self.flicks(3)
+        self.assertLess(speeds[1] / speeds[0], 1.5)
+        self.assertLess(speeds[2] / speeds[1], 1.5)
+
+    def test_boost_has_a_ceiling(self):
+        speeds, _ = self.flicks(15)
+        self.assertAlmostEqual(max(speeds), m.FLICK_BOOST_MAX * self.NORMAL,
+                               delta=0.01 * self.NORMAL)
+        self.assertAlmostEqual(speeds[-1], speeds[-2])
+
+    def test_faster_glide_travels_further(self):
+        self.flicks(1)
+        first = sum(s.dy for s in glide(self.machine))
+        other = MomentumMachine()
+        self.machine = other
+        self.flicks(2)
+        second = sum(s.dy for s in glide(other))
+        self.assertGreater(second, 1.25 * first)
+
+    def test_flick_the_other_way_starts_again(self):
+        _, t = self.flicks(3)
+        speeds, _ = self.flicks(1, vy=-200.0, start=t)
+        self.assertSpeeds(speeds, [-1.0])
+
+    def test_flick_on_the_other_axis_starts_again(self):
+        _, t = self.flicks(3)
+        speeds, _ = self.flicks(1, vx=-200.0, vy=0.0, start=t)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_repeats_the_other_way_build_up_in_their_turn(self):
+        _, t = self.flicks(3)
+        speeds, _ = self.flicks(2, vy=-200.0, start=t)
+        self.assertSpeeds(speeds, [-1.0, -(1.0 + m.FLICK_BOOST_STEP)])
+
+    def test_flick_just_after_the_glide_ended_still_counts(self):
+        self.flicks(1)
+        ended = self.let_the_glide_end()
+        speeds, _ = self.flicks(1, start=ended + m.FLICK_CHAIN_S / 2)
+        self.assertSpeeds(speeds, [1.0 + m.FLICK_BOOST_STEP])
+
+    def test_flick_after_a_pause_starts_again(self):
+        self.flicks(2)
+        ended = self.let_the_glide_end()
+        speeds, _ = self.flicks(1, start=ended + m.FLICK_CHAIN_S + 0.1)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_slow_scroll_in_between_starts_again(self):
+        _, t = self.flicks(2)
+        lifted = flick(self.machine, 0.0, m.GLIDE_MIN_MM_S / 2, start=t)
+        self.assertIsNone(self.machine.next_deadline())
+        speeds, _ = self.flicks(1, start=lifted + 0.1)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_another_touch_in_between_starts_again(self):
+        _, t = self.flicks(2)
+        self.machine.update(t, 1, 30.0, 30.0)
+        self.machine.update(t + 0.05, 0, 0.0, 0.0)
+        speeds, _ = self.flicks(1, start=t + 0.1)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_interrupt_starts_again(self):
+        _, t = self.flicks(2)
+        self.machine.interrupt(t)
+        speeds, _ = self.flicks(1, start=t + 0.1)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_boost_is_applied_after_the_cap_on_finger_speed(self):
+        speeds, _ = self.flicks(2, vy=5000.0)
+        capped = m.GLIDE_MAX_MM_S * m.SCROLL_UNITS_PER_MM
+        self.assertAlmostEqual(speeds[0], capped, delta=0.01 * capped)
+        self.assertAlmostEqual(speeds[1], (1.0 + m.FLICK_BOOST_STEP) * capped,
+                               delta=0.01 * capped)
+
+
+class FlickBoostTest(unittest.TestCase):
+    def test_first_flick_is_not_boosted(self):
+        self.assertEqual(m.flick_boost(1), 1.0)
+
+    def test_boost_never_falls_as_flicks_repeat(self):
+        boosts = [m.flick_boost(n) for n in range(1, 30)]
+        self.assertEqual(boosts, sorted(boosts))
+
+    def test_boost_never_passes_its_ceiling(self):
+        self.assertEqual(m.flick_boost(1000), m.FLICK_BOOST_MAX)
+
+
 class ScrollTest(unittest.TestCase):
     def test_scroll_is_a_value(self):
         self.assertEqual(Scroll(1.0, 2.0), Scroll(1.0, 2.0))

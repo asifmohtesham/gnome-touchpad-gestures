@@ -20,6 +20,11 @@ GLIDE_STOP_UNITS_S = 480.0   # the glide ends below this; 120 units is one notch
 GLIDE_FRAME_S = 0.008        # time between glide steps
 GLIDE_LATE_FRAMES = 3        # a late step never covers more than this many
 
+# How repeated flicks build up speed.
+FLICK_BOOST_STEP = 0.3       # each repeat adds this much of the normal speed
+FLICK_BOOST_MAX = 3.0        # and the speed never passes this many times normal
+FLICK_CHAIN_S = 0.3          # a flick this soon after a glide ended still counts
+
 # How finger travel maps to scrolling. SCROLL_UNITS_PER_MM equals what libinput
 # scrolls per millimetre, so the page keeps its speed at the lift: 39.37 units
 # per mm at 1000 dpi, times libinput's unaccelerated touchpad factor of
@@ -46,6 +51,15 @@ class Scroll:
     first: bool = False  # the first step of a glide
 
 
+def flick_boost(streak: int) -> float:
+    """How many times normal speed the `streak`-th flick in a row glides at.
+
+    The first is normal. Each one after adds the same amount, so the speed
+    climbs steadily instead of doubling, up to a ceiling.
+    """
+    return min(FLICK_BOOST_MAX, 1.0 + FLICK_BOOST_STEP * (streak - 1))
+
+
 def glide_speed(elapsed: float) -> float:
     """Fraction of the starting speed left after `elapsed` seconds of gliding."""
     return math.exp(-elapsed / GLIDE_TAU_S)
@@ -67,6 +81,10 @@ class MomentumMachine:
         self._last = 0.0
         self._first = False
         self._deadline: float | None = None
+        self._ended_at = -math.inf    # when the last glide stopped
+        self._chained = False         # this touch began on, or just after, a glide
+        self._streak = 0              # flicks in a row, in one direction
+        self._heading = (0, 0)        # which way the last glide went
 
     def next_deadline(self) -> float | None:
         return self._deadline
@@ -77,7 +95,7 @@ class MomentumMachine:
         remaining = glide_speed(t - self._started)
         vx, vy = self._glide[0] * remaining, self._glide[1] * remaining
         if math.hypot(vx, vy) < GLIDE_STOP_UNITS_S:
-            self._end_glide()
+            self._end_glide(t)
             return []
         # After a stall, skip the distance missed instead of jumping it.
         step = min(t - self._last, GLIDE_LATE_FRAMES * GLIDE_FRAME_S)
@@ -94,6 +112,11 @@ class MomentumMachine:
             # A pad reports nothing while fingers rest, so a gap before the
             # fingers leave means they had stopped moving.
             self._velocity = (0.0, 0.0)
+        if self._count == 0 and count > 0:
+            # Fingers landing on a page that still glides, or has only just
+            # come to rest, are carrying on from the flick before.
+            gliding = self._deadline is not None
+            self._chained = gliding or t - self._ended_at <= FLICK_CHAIN_S
         self._count = count
         if count > 0:
             self._touching(t, count, cx, cy, changed, fingers, pressed)
@@ -103,7 +126,8 @@ class MomentumMachine:
 
     def interrupt(self, t: float) -> list[Scroll]:
         """Finger state was lost; this is not a lift, so nothing may glide."""
-        self._end_glide()
+        self._end_glide(t)
+        self._streak = 0
         if self._dragged:
             # The drag machine treats this as a lift and holds its button.
             self._no_glide_before = t + SPOIL_LINGER_S
@@ -115,7 +139,7 @@ class MomentumMachine:
                   changed: bool, fingers: tuple, pressed: bool) -> None:
         if self._deadline is not None:
             # Any touch stops a glide.
-            self._end_glide()
+            self._end_glide(t)
         if count >= 3 or pressed:
             # Drags, swipes and clicks are not scrolling.
             self._spoiled = True
@@ -157,10 +181,19 @@ class MomentumMachine:
         released = t >= self._no_glide_before
         if (fresh and fast and scrolled and released and not self._spoiled
                 and self._deadline is None):
-            self._glide = self._wheel_velocity(*self._velocity)
+            vx, vy = self._wheel_velocity(*self._velocity)
+            heading = ((vx > 0) - (vx < 0), (vy > 0) - (vy < 0))
+            repeated = self._chained and heading == self._heading
+            self._streak = self._streak + 1 if repeated else 1
+            self._heading = heading
+            boost = flick_boost(self._streak)
+            self._glide = (vx * boost, vy * boost)
             self._started = self._last = t
             self._first = True
             self._deadline = t + GLIDE_FRAME_S
+        else:
+            # A touch that ends without a flick breaks the run.
+            self._streak = 0
         if self._dragged:
             self._no_glide_before = t + SPOIL_LINGER_S
         self._forget_touch()
@@ -190,6 +223,8 @@ class MomentumMachine:
         self._spoiled = False
         self._dragged = False
 
-    def _end_glide(self) -> None:
+    def _end_glide(self, t: float) -> None:
+        if self._deadline is not None:
+            self._ended_at = t
         self._glide = None
         self._deadline = None
