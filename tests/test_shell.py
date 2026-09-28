@@ -5,7 +5,8 @@ import unittest
 import dbus
 
 from gnome_x11_touchpad_gestures.shell import (
-    OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
+    EXTENSION_INTERFACE, EXTENSION_PATH, OVERVIEW_TIMEOUT_S, SHELL_RETRY_S,
+    Shell)
 
 
 class FakeBus:
@@ -13,6 +14,10 @@ class FakeBus:
         self.calls = []
         self.error = None
         self.answer = None
+        self.sent = []
+        self.flushed = 0
+        self.extension_error = None
+        self.extension_answers = {}
 
     def call_blocking(self, bus_name, object_path, interface, method,
                       signature, args, timeout=None):
@@ -20,7 +25,19 @@ class FakeBus:
                            signature, tuple(args), timeout))
         if self.error:
             raise self.error
+        if interface == EXTENSION_INTERFACE:
+            if self.extension_error:
+                raise self.extension_error
+            return self.extension_answers.get(method)
         return self.answer
+
+    def send_message(self, message):
+        if self.extension_error:
+            raise self.extension_error
+        self.sent.append(message)
+
+    def flush(self):
+        self.flushed += 1
 
 
 def request(show):
@@ -175,6 +192,154 @@ class ShellTest(unittest.TestCase):
         self.connect_error = None
         self.assertEqual(self.quietly(False), "")
         self.assertEqual(self.connections, 2)
+
+
+class ExtensionTest(unittest.TestCase):
+    """What the daemon asks of the extension, and how it copes without it."""
+
+    MISSING = RuntimeError("No such interface")
+
+    def setUp(self):
+        self.bus = FakeBus()
+        self.now = 100.0
+        self.shell = Shell(connect=lambda: self.bus, clock=lambda: self.now)
+
+    def quietly(self, call, *args):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            answer = call(*args)
+        return answer, stderr.getvalue()
+
+    def asked(self):
+        return [call for call in self.bus.calls if call[2] == EXTENSION_INTERFACE]
+
+    def sent(self):
+        return [(m.get_destination(), m.get_path(), m.get_interface(),
+                 m.get_member(), tuple(m.get_args_list()), m.get_no_reply())
+                for m in self.bus.sent]
+
+    # Where the pointer is.
+
+    def test_pointer_over_a_window(self):
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(True)
+        self.assertEqual(self.quietly(self.shell.pointer_over_window), (True, ""))
+        self.assertEqual(self.asked(), [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "PointerOverWindow", "", (), OVERVIEW_TIMEOUT_S)])
+
+    def test_pointer_over_the_dock(self):
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(False)
+        self.assertIs(self.quietly(self.shell.pointer_over_window)[0], False)
+
+    def test_without_the_extension_nothing_is_known(self):
+        self.bus.extension_error = self.MISSING
+        answer, message = self.quietly(self.shell.pointer_over_window)
+        self.assertIsNone(answer)
+        self.assertIn("extension", message)
+
+    def test_glide_allowed_over_a_window(self):
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(True)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], True)
+
+    def test_glide_refused_over_the_dock(self):
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(False)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+
+    def test_without_the_extension_only_the_overview_refuses_a_glide(self):
+        self.bus.extension_error = self.MISSING
+        self.bus.answer = dbus.Boolean(False)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], True)
+        self.bus.answer = dbus.Boolean(True)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+
+    def test_extension_answering_means_the_overview_is_not_asked_about(self):
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(True)
+        self.quietly(self.shell.may_glide)
+        self.assertEqual(len(self.bus.calls), 1)
+
+    # Swipes.
+
+    def test_swipe_taken_up(self):
+        self.bus.extension_answers["SwipeBegin"] = dbus.Boolean(True)
+        self.assertEqual(self.quietly(self.shell.swipe_begin, 12.5), (True, ""))
+        self.assertEqual(self.asked(), [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "SwipeBegin", "u", (12500,), OVERVIEW_TIMEOUT_S)])
+
+    def test_swipe_declined(self):
+        self.bus.extension_answers["SwipeBegin"] = dbus.Boolean(False)
+        self.assertIs(self.quietly(self.shell.swipe_begin, 12.5)[0], False)
+
+    def test_without_the_extension_no_swipe_is_taken_up(self):
+        self.bus.extension_error = self.MISSING
+        self.assertIs(self.quietly(self.shell.swipe_begin, 12.5)[0], False)
+
+    def test_update_is_sent_without_waiting_for_an_answer(self):
+        self.shell.swipe_update(12.507, 0.25)
+        self.assertEqual(self.sent(), [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "SwipeUpdate", (12507, 0.25), True)])
+        self.assertEqual(self.bus.calls, [])
+        self.assertEqual(self.bus.flushed, 1)
+
+    def test_end_is_sent_without_waiting_for_an_answer(self):
+        self.shell.swipe_end(12.6)
+        self.assertEqual(self.sent(), [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "SwipeEnd", (12600,), True)])
+
+    def test_cancel_is_sent_without_waiting_for_an_answer(self):
+        self.shell.swipe_cancel()
+        self.assertEqual(self.sent(), [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "SwipeCancel", (), True)])
+
+    def test_time_is_whole_milliseconds_that_wrap_like_the_shell_s(self):
+        self.shell.swipe_end(2 ** 32 / 1000 + 0.005)
+        self.assertEqual(self.sent()[0][4], (5,))
+
+    def test_failure_to_send_is_survived(self):
+        self.bus.extension_error = RuntimeError("bus went away")
+        for call, args in ((self.shell.swipe_update, (1.0, 0.1)),
+                           (self.shell.swipe_end, (1.0,)),
+                           (self.shell.swipe_cancel, ())):
+            with self.subTest(call=call.__name__):
+                self.quietly(call, *args)
+
+    # A missing extension is the usual case, not a fault.
+
+    def test_missing_extension_is_said_once(self):
+        self.bus.extension_error = self.MISSING
+        self.bus.answer = dbus.Boolean(False)
+        _, first = self.quietly(self.shell.may_glide)
+        self.assertIn("extension", first)
+        for _ in range(3):
+            self.now += SHELL_RETRY_S
+            self.assertEqual(self.quietly(self.shell.may_glide)[1], "")
+            self.assertEqual(self.quietly(self.shell.swipe_begin, self.now)[1], "")
+
+    def test_missing_extension_is_left_alone_for_a_while(self):
+        self.bus.extension_error = self.MISSING
+        self.bus.answer = dbus.Boolean(False)
+        self.quietly(self.shell.may_glide)
+        asked = len(self.asked())
+        self.now += SHELL_RETRY_S / 2
+        self.quietly(self.shell.may_glide)
+        self.quietly(self.shell.swipe_begin, self.now)
+        self.assertEqual(len(self.asked()), asked)
+
+    def test_extension_is_found_once_it_is_there(self):
+        self.bus.extension_error = self.MISSING
+        self.quietly(self.shell.swipe_begin, self.now)
+        self.bus.extension_error = None
+        self.bus.extension_answers["SwipeBegin"] = dbus.Boolean(True)
+        self.now += SHELL_RETRY_S
+        self.assertIs(self.quietly(self.shell.swipe_begin, self.now)[0], True)
+
+    def test_missing_extension_does_not_silence_the_overview_question(self):
+        self.bus.extension_error = self.MISSING
+        self.bus.answer = dbus.Boolean(True)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+        self.assertIs(self.quietly(self.shell.may_glide)[0], False)
 
 
 if __name__ == "__main__":
