@@ -21,8 +21,9 @@ const SCROLLING = 1;
 // are the shell's private methods and may change between versions, so every
 // call is guarded: a shell that has changed gets no swipe, not a fault.
 export class WorkspaceSwipe {
-    constructor({tracker, pointer, schedule, cancel}) {
+    constructor({tracker, mode, pointer, schedule, cancel}) {
         this._lookUpTracker = tracker;
+        this._mode = mode;
         this._pointer = pointer;
         this._schedule = schedule;
         this._cancel = cancel;
@@ -34,6 +35,17 @@ export class WorkspaceSwipe {
         this.cancel();
         try {
             const tracker = this._lookUpTracker();
+            // The shell's own gesture refuses a swipe while the tracker is
+            // switched off, as it is while a switch of workspace made by
+            // keyboard is animating, and where the tracker does not work,
+            // as with a menu open. It makes those checks before it reaches
+            // the tracker, so calling the tracker directly skips them. A
+            // swipe begun regardless is dropped at its first move, or worse,
+            // cuts the animation short and leaves the tracker switched off.
+            if (!tracker.enabled)
+                return false;
+            if ((tracker._allowedModes & this._mode()) === 0)
+                return false;
             const [x, y] = this._pointer();
             tracker._beginGesture(null, time, x, y);
             // The shell takes a swipe up by confirming it, which it may
@@ -51,11 +63,17 @@ export class WorkspaceSwipe {
     update(time, fraction) {
         if (!this._tracker)
             return;
+        // Anything on the session bus can call this. A share that is not a
+        // number would poison the tracker's idea of where the workspace is.
+        if (typeof fraction !== 'number' || !Number.isFinite(fraction))
+            return;
         try {
             this._tracker._updateGesture(
                 null, time, fraction * BASE_DISTANCE, BASE_DISTANCE);
         } catch (_error) {
-            this._forget();
+            // Forgetting the swipe would leave the workspace half way
+            // across with nothing left to move it.
+            this.cancel();
             return;
         }
         this._watch();
@@ -64,13 +82,13 @@ export class WorkspaceSwipe {
     end(time) {
         if (!this._tracker)
             return;
-        const tracker = this._tracker;
-        this._forget();
         try {
-            tracker._endTouchpadGesture(null, time, BASE_DISTANCE);
+            this._tracker._endTouchpadGesture(null, time, BASE_DISTANCE);
         } catch (_error) {
-            // Nothing more can be done for it.
+            this.cancel();
+            return;
         }
+        this._forget();
     }
 
     cancel() {
@@ -116,9 +134,16 @@ export class WorkspaceSwipe {
 // something the shell itself has drawn: the top bar, the dock, a menu.
 // There a turn of the wheel usually steps through something, and momentum
 // would race through it.
-export function isOverWindow(actor, windowGroups, overviewVisible) {
+//
+// `actor` is what was picked among the things that react to the pointer.
+// The stage itself coming back means nothing of the shell's is there. That
+// matters because the shell lays some things over the whole monitor without
+// taking the pointer, the space around a notification for one.
+export function isOverWindow(actor, windowGroups, overviewVisible, stage) {
     if (overviewVisible)
         return false;
+    if (actor && actor === stage)
+        return true;
     let depth = 0;
     for (let at = actor; at && depth < DEEPEST; at = at.get_parent(), depth++) {
         if (windowGroups.includes(at))
