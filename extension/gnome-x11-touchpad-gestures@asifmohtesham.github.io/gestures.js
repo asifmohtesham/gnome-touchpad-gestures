@@ -7,7 +7,8 @@
 export const BASE_DISTANCE = 400;
 
 // A swipe that hears nothing for this long is put back. The daemon sends
-// word every few milliseconds, so silence means it has gone.
+// word at every move of the fingers, and a few times a second while they
+// are held still, so silence means it has gone.
 export const WATCHDOG_MS = 1000;
 
 // How far up from an actor to look for a window group before giving up.

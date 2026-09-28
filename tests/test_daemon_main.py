@@ -384,7 +384,9 @@ class MainTest(unittest.TestCase):
         self.assertEqual(FakeShell.swipes[0], "begin")
         self.assertEqual(FakeShell.swipes[-1], "end")
         moved = [s for s in FakeShell.swipes if not isinstance(s, str)]
-        self.assertAlmostEqual(sum(moved), 60.0 / 40.0, places=2)
+        # The first step of 10 mm is what set the swipe off. The shell
+        # follows from where the fingers were then.
+        self.assertAlmostEqual(sum(moved), (60.0 - 10.0) / 40.0, places=2)
         self.assertTrue(all(step > 0 for step in moved))
         self.assertEqual(self.keys_pressed(), [])
 

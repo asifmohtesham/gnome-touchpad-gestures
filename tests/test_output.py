@@ -219,6 +219,25 @@ class OutputTest(unittest.TestCase):
         ])
         self.assertEqual(self.keyboard.events, [])
 
+    def test_shell_that_follows_starts_from_where_the_fingers_are(self):
+        # What they travelled before the swipe began would reach the shell
+        # as travel made in no time, and a drift would pass for a flick.
+        self.output.emit([SwipeBegin(1.0, travel=-4.3), SwipeEnd(1.4)])
+        self.assertEqual(self.shell.swipes, [("begin", 1.0), ("end", 1.4)])
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_shell_that_cannot_follow_counts_the_travel_made_before(self):
+        self.shell.follows_fingers = False
+        self.output.emit([SwipeBegin(1.0, travel=-5.0)])
+        self.output.emit([SwipeMove(1.01, -SWIPE_MM + 5.5)])
+        self.assertEqual(self.keyboard.events, [])
+        self.output.emit([SwipeMove(1.02, -0.5)])
+        self.assertEqual(self.keyboard.events, self.NEXT_CHORD)
+
+    def test_fingers_held_still_are_passed_on_as_such(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.3, 0.0)])
+        self.assertEqual(self.shell.swipes[-1], ("update", 1.3, 0.0))
+
     def test_fingers_moving_left_move_towards_the_next_workspace(self):
         self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -SWIPE_FULL_MM)])
         self.assertEqual(self.shell.swipes[-1], ("update", 1.0, 1.0))
