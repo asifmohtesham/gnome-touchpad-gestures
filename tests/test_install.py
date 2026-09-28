@@ -752,6 +752,171 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
             self.assertFalse((home / PROGRAM).exists())
 
 
+class RestartAdviceTest(unittest.TestCase):
+    """The shell loads the extension when it starts. Whether it has to be
+    restarted depends on what it has loaded, and is not said otherwise."""
+
+    RESTART = "Alt+F2"
+    # The installer waits a second for the service; the tests need not.
+    ACCESS = ('check_access() { return 0; }; needs_sudo() { return 1; }; '
+              'sleep() { :; }; ')
+
+    def advice(self, loaded, version, changed):
+        result = call("install.sh", "explain_extension", loaded, version, changed)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        return result.stdout
+
+    def test_extension_loaded_as_installed_needs_no_restart(self):
+        said = self.advice("0.2.1", "0.2.1", "no")
+        self.assertNotIn(self.RESTART, said)
+        self.assertNotIn("snap", said)
+        self.assertIn("0.2.1", said)
+        self.assertIn("No restart is needed", said)
+
+    def test_extension_not_loaded_needs_the_shell_restarted(self):
+        said = self.advice("", "0.2.1", "yes")
+        self.assertIn(self.RESTART, said)
+        self.assertIn("has not loaded", said)
+        self.assertIn("snap", said)
+        self.assertNotIn("No restart", said)
+
+    def test_it_needs_it_whether_or_not_the_files_changed(self):
+        self.assertIn(self.RESTART, self.advice("", "0.2.1", "no"))
+
+    def test_older_version_loaded_needs_the_shell_restarted(self):
+        said = self.advice("0.2.0", "0.2.1", "no")
+        self.assertIn(self.RESTART, said)
+        self.assertIn("0.2.0", said)
+        self.assertIn("0.2.1", said)
+        self.assertNotIn("No restart", said)
+        # It is loaded, and follows the fingers as it did.
+        self.assertNotIn("snap", said)
+        self.assertNotIn("has not loaded", said)
+
+    def test_changed_extension_of_the_same_version_needs_it_too(self):
+        # As after editing it, or an install from a checkout between releases.
+        said = self.advice("0.2.1", "0.2.1", "yes")
+        self.assertIn(self.RESTART, said)
+        self.assertIn("changed", said)
+        self.assertNotIn("No restart", said)
+        self.assertNotIn("snap", said)
+
+    def test_windows_are_said_to_stay_open_wherever_a_restart_is_advised(self):
+        for loaded, changed in (("", "yes"), ("0.2.0", "no"), ("0.2.1", "yes")):
+            with self.subTest(loaded=loaded, changed=changed):
+                self.assertIn("windows stay open",
+                              self.advice(loaded, "0.2.1", changed))
+
+    def installed(self, loaded, again=False, edit=None):
+        """What the whole installer says at the end, and the last advice in it."""
+        shell = f'loaded_extension_version() {{ echo "{loaded}"; }}; '
+        with contextlib.ExitStack() as stack:
+            home, run, _ = stack.enter_context(recording_sandbox())
+            snippet = self.ACCESS + shell + "main_as 1000"
+            args = []
+            if edit is not None:
+                copy = pathlib.Path(stack.enter_context(tempfile.TemporaryDirectory(
+                    prefix="gnome-x11-touchpad-gestures-test-")))
+                for part in ("extension", PACKAGE):
+                    shutil.copytree(REPO / part, copy / part,
+                                    ignore=shutil.ignore_patterns("__pycache__"))
+                snippet = 'repo="$1"; ' + snippet
+                args = [str(copy)]
+            result = run("install.sh", snippet, *args)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if edit is not None:
+                edit(copy / "extension" / EXTENSION)
+                again = True
+            if again:
+                result = run("install.sh", snippet, *args)
+                self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout
+
+    def version(self):
+        import gnome_x11_touchpad_gestures
+        return gnome_x11_touchpad_gestures.__version__
+
+    def test_first_install_advises_a_restart(self):
+        said = self.installed(loaded="")
+        self.assertIn(self.RESTART, said)
+        self.assertIn("has not loaded", said)
+
+    def test_install_over_a_loaded_extension_of_this_version_changed_nothing(self):
+        said = self.installed(loaded=self.version(), again=True)
+        self.assertNotIn(self.RESTART, said)
+        self.assertIn("No restart is needed", said)
+        self.assertNotIn("snap", said)
+
+    def test_first_copy_of_the_files_counts_as_a_change(self):
+        # The shell answers with this version, from somewhere else.
+        said = self.installed(loaded=self.version())
+        self.assertIn(self.RESTART, said)
+
+    def test_install_of_an_edited_extension_advises_a_restart(self):
+        def edit(extension):
+            with (extension / "gestures.js").open("a") as file:
+                file.write("// edited\n")
+
+        said = self.installed(loaded=self.version(), edit=edit)
+        self.assertIn(self.RESTART, said)
+        self.assertIn("changed", said)
+
+    def test_edit_to_any_of_its_files_counts(self):
+        for name in ("extension.js", "gestures.js", "metadata.json"):
+            with self.subTest(file=name):
+                def edit(extension, name=name):
+                    with (extension / name).open("a") as file:
+                        file.write("\n")
+
+                self.assertIn(self.RESTART,
+                              self.installed(loaded=self.version(), edit=edit))
+
+    def test_install_over_an_older_loaded_extension_advises_a_restart(self):
+        said = self.installed(loaded="0.0.9", again=True)
+        self.assertIn(self.RESTART, said)
+        self.assertIn("0.0.9", said)
+        self.assertIn(self.version(), said)
+
+    def test_what_is_loaded_is_asked_after_the_extension_is_in_place(self):
+        # Switching it on may be what makes the shell load it.
+        shell = ('loaded_extension_version() { '
+                 f'test -e "$HOME/{EXTENSIONS}/{EXTENSION}/metadata.json" '
+                 '&& echo in-place; }; ')
+        with recording_sandbox() as (_, run, _commands):
+            result = run("install.sh", self.ACCESS + shell + "main_as 1000")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("in-place", result.stdout)
+
+    def test_this_version_is_the_repository_s(self):
+        result = call("install.sh", "this_version")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), self.version())
+
+    def test_shell_that_cannot_be_asked_has_loaded_nothing(self):
+        # As here, where there is no session to ask.
+        result = call("install.sh", "loaded_extension_version")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "")
+
+    def test_client_that_cannot_be_run_has_loaded_nothing_either(self):
+        result = call("install.sh", "eval",
+                      'repo=/nowhere/at/all; loaded_extension_version')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((result.stdout, result.stderr), ("", ""))
+
+    def test_installer_that_cannot_ask_still_finishes(self):
+        failing = 'loaded_extension_version() { return 1; }; '
+        with recording_sandbox() as (_, run, _commands):
+            result = run("install.sh", self.ACCESS + failing + "main_as 1000")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(self.RESTART, result.stdout)
+
+    def test_the_shell_is_asked_by_the_daemon_s_own_client(self):
+        script = (INSTALL / "install.sh").read_text()
+        self.assertIn("extension_version()", script)
+
+
 class InstalledFilesTest(unittest.TestCase):
     def test_rule_leaves_anything_that_is_also_a_keyboard_alone(self):
         rule = (INSTALL / RULE).read_text()

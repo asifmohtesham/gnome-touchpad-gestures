@@ -83,9 +83,11 @@ that needs it, and refuses to run as root.
 If it says a re-login is needed, log out and in, then run it again.
 
 **Then restart GNOME Shell**, so that it loads the extension: press Alt+F2,
-type `r`, press Enter. Your windows stay open. Do the same after an update
-that changes the extension. `--check`, under Troubleshooting, says whether
-the shell has it loaded.
+type `r`, press Enter. Your windows stay open. The shell loads an extension
+when it starts and goes on running what it loaded, so the same is needed
+after an update that changes the extension. The installer says at the end
+whether it is: it asks the shell which version it has loaded. `--check`,
+under Troubleshooting, says the same at any time.
 
 ### With and without the extension
 
