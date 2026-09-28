@@ -182,6 +182,17 @@ installed copy. Its exit status says what it found:
 | 4 | The touchpad reports one position, not each finger, and cannot be used |
 | anything else | A different problem, such as a missing Python package or an error in edited code. Logging out will not fix it |
 
+## Versions
+
+```bash
+python3 -m gnome_x11_touchpad_gestures.daemon --version       # the repository's
+journalctl --user -u gnome-x11-touchpad-gestures -n 5          # the one running
+```
+
+The service logs its version when it starts. `CHANGELOG.md` says what each
+version changed. If the two commands above disagree, the repository is
+newer than what is installed: run `./install/install.sh`.
+
 ## Tests
 
 ```bash

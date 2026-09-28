@@ -199,6 +199,17 @@ class MainTest(unittest.TestCase):
     def closed(self):
         return {name for name, device in self.devices.items() if device.closed}
 
+    def test_startup_line_names_the_version(self):
+        import gnome_x11_touchpad_gestures
+        touchpad = FakeTouchpad([interrupt])
+        with mock.patch.object(daemon, "find_touchpad", return_value=touchpad), \
+                mock.patch.object(daemon.os, "access", return_value=True), \
+                mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
+                mock.patch.object(daemon, "Shell", FakeShell), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            daemon.main([])
+        self.assertIn(gnome_x11_touchpad_gestures.__version__, stdout.getvalue())
+
     def run_main(self, touchpad):
         if touchpad is not None:
             # A test that goes wrong must fail, not leave the daemon waiting.

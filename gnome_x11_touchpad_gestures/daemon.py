@@ -12,6 +12,7 @@ import time
 import evdev
 from evdev import ecodes as e
 
+from gnome_x11_touchpad_gestures import __version__
 from gnome_x11_touchpad_gestures.gestures import GestureMachine
 from gnome_x11_touchpad_gestures.momentum import MomentumMachine
 from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS, Output
@@ -209,6 +210,9 @@ def main(argv=None) -> int:
         description="Three-finger drag, four-finger workspace switch "
                     "and momentum scrolling.")
     parser.add_argument(
+        "--version", action="version",
+        version=f"gnome-x11-touchpad-gestures {__version__}")
+    parser.add_argument(
         "--check", action="store_true",
         help="verify access to the touchpad and uinput, then exit")
     args = parser.parse_args(argv)
@@ -249,8 +253,8 @@ def main(argv=None) -> int:
         output = Output(pointer, keyboard, wheel, shell)
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
-        print(f"gnome-x11-touchpad-gestures: listening on {device.path} ({device.name})",
-              flush=True)
+        print(f"gnome-x11-touchpad-gestures {__version__}: "
+              f"listening on {device.path} ({device.name})", flush=True)
         try:
             run(device, make_tracker(device),
                 Machines(GestureMachine(), glides(shell)), output)
