@@ -319,6 +319,36 @@ instead of delivering it as one jump. Starting speed is capped at
 A glide always runs along the stronger axis only. (The first version let
 nearly diagonal flicks glide on both axes; see below for why that changed.)
 
+### Repeated flicks (added 2026-09-28)
+
+The first flick glides at the speed the fingers had. A flick that follows
+another glides faster: the `n`-th in a row starts at `flick_boost(n)` times
+that speed, which is `1 + FLICK_BOOST_STEP * (n - 1)`, never more than
+`FLICK_BOOST_MAX`. The climb is a fixed amount per flick, not a doubling, so
+it is gradual.
+
+A flick follows another when both of these hold:
+
+- its touch began while the page still glided, or no more than
+  `FLICK_CHAIN_S` after the glide stopped
+- it goes the same way: same axis, same direction
+
+Anything else starts the count again: a flick the other way or on the other
+axis, a pause, a touch that ends without a flick (a slow scroll, a tap,
+pointing, a drag or a swipe), and `interrupt`.
+
+The boost applies to the glide's starting speed after the cap of
+`GLIDE_MAX_MM_S` on finger speed, so a boosted glide may exceed that cap by
+up to `FLICK_BOOST_MAX` times. A faster start also means a longer glide: for
+a 200 mm/s flick, 1.8 s and 68 notches at normal speed, 2.3 s and 208 notches
+at the ceiling.
+
+| Constant | Initial value | Meaning |
+|---|---|---|
+| `FLICK_BOOST_STEP` | 0.3 | Share of normal speed each repeat adds |
+| `FLICK_BOOST_MAX` | 3.0 | Ceiling, in times normal speed |
+| `FLICK_CHAIN_S` | 0.3 | How long after a glide stops a flick still follows it |
+
 `interrupt(t)` is what the daemon calls on `SYN_DROPPED`. For the gesture
 machine it is the same as every finger lifting. For momentum it is not a
 lift: the glide ends and nothing new may start. If the touch had three or

@@ -16,6 +16,7 @@ pointing, scrolling and tapping are untouched.
 | Four fingers, swipe up | Open the Activities overview |
 | Four fingers, swipe down | Close the Activities overview |
 | Two fingers, flick and lift | The page keeps gliding and slows to a stop |
+| Flick again while it glides | The page glides faster, a little more each time |
 | Any touch during a glide | The glide stops at once |
 
 Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
@@ -148,10 +149,14 @@ Momentum scrolling has its own constants at the top of
 | `GLIDE_STOP_UNITS_S` | 480.0 | end the glide sooner, while it is still moving briskly |
 | `GLIDE_MIN_TRAVEL_MM` | 3.0 | require a longer scroll before a lift can glide |
 | `STILL_S` | 0.03 | make flicks glide more reliably. Raise it if a flick sometimes fails to glide; lower it if a scroll that had stopped glides anyway |
+| `FLICK_BOOST_STEP` | 0.3 | make repeated flicks build up speed faster. Each repeat adds this much of the normal speed; 0 turns the build-up off |
+| `FLICK_BOOST_MAX` | 3.0 | let repeated flicks reach a higher top speed |
+| `FLICK_CHAIN_S` | 0.3 | allow a longer pause between flicks before the speed starts again from normal |
 
 Set `NATURAL_SCROLL = False` there if you turn natural scrolling off for
 the touchpad. To change the shape of the slowdown itself, edit
-`glide_speed()` in the same file.
+`glide_speed()` in the same file, and to change how speed builds up over
+repeated flicks, edit `flick_boost()`.
 
 ## Troubleshooting
 
@@ -220,6 +225,12 @@ Run after installing or changing a tunable.
 - For about a third of a second after any touch with three or more fingers,
   a two-finger flick does not glide. A drag still holds its button for that
   long, and the daemon does not tell a drag from a swipe or a tap here.
+- Repeated flicks build up speed only while they follow one another: each
+  must land while the page still glides, or within a third of a second of
+  it stopping, and go the same way. A flick the other way, a pause, a slow
+  scroll or any other touch in between starts again from normal speed.
+- A boosted glide starts faster than your fingers were moving, so the page
+  speeds up at the moment you lift. That is the point of it.
 - A glide lasts up to about two seconds. During that time it goes to
   whatever window is under the pointer, so it follows the pointer if an
   external mouse moves it, and pressing Ctrl zooms in apps that zoom on
