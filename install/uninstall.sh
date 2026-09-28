@@ -2,7 +2,10 @@
 # Removes gnome-x11-touchpad-gestures and revokes the device access it was given.
 set -euo pipefail
 
-rule="/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules"
+rules_dir="/etc/udev/rules.d"
+rule="71-gnome-x11-touchpad-gestures.rules"
+# What this project installed when it was called finger-drag.
+former="finger-drag"
 unit="gnome-x11-touchpad-gestures.service"
 unit_file="$HOME/.config/systemd/user/$unit"
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
@@ -30,12 +33,14 @@ main_as() {
     refuse_root "$1"
     echo "Stopping and removing the user service and the program..."
     systemctl --user disable --now "$unit" 2>/dev/null || true
-    rm -f "$unit_file"
+    systemctl --user disable --now "$former.service" 2>/dev/null || true
+    rm -f "$unit_file" "$HOME/.config/systemd/user/$former.service"
     systemctl --user daemon-reload
-    rm -rf "$program_dir"
+    rm -rf "$program_dir" "$HOME/.local/share/$former"
 
     echo "Removing udev rule and device access (needs sudo)..."
-    sudo rm -f "$rule"
+    sudo rm -f "$rules_dir/$rule"
+    sudo rm -f "$rules_dir/71-$former.rules"
     sudo udevadm control --reload
     # udev remembers that it tagged these devices, and the login manager would
     # grant access again from that memory. A fresh look at them clears it.

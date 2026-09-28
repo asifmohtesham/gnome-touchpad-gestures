@@ -1,9 +1,11 @@
 # gnome-x11-touchpad-gestures Implementation Plan
 
-> **Historical record.** This is the plan the first version was built from.
-> The project has since been renamed, moved and extended, and the names and
-> paths below were updated with it, so the steps no longer describe a
-> sequence that can be followed as written. The spec is the current design.
+> **Historical record.** This is the plan the first version was built from,
+> when the project was called `finger-drag` and lived at `~/finger-drag`. It
+> has since been renamed, moved and extended. The names and paths below were
+> updated with it, so they are not the ones the first version had, and the
+> steps no longer describe a sequence that can be followed as written. The
+> spec is the current design.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1663,7 +1665,7 @@ Expected: a `touchpad:` line and a `uinput:` line, exit 0.
 Run: `systemctl --user is-active gnome-x11-touchpad-gestures && systemctl --user is-enabled gnome-x11-touchpad-gestures`
 Expected: `active` then `enabled`.
 
-Run: `xinput list --name-only | grep gnome-x11-touchpad-gestures`
+Run: `xinput list --name-only | grep gnome-x11-gestures`
 Expected: `gnome-x11-gestures pointer` and `gnome-x11-gestures keyboard`.
 
 Run: `journalctl --user -u gnome-x11-touchpad-gestures -n 20 --no-pager`

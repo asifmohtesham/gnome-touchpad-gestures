@@ -3,6 +3,7 @@ import contextlib
 import os
 import pathlib
 import re
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -18,11 +19,14 @@ UNIT = "gnome-x11-touchpad-gestures.service"
 RULE = "71-gnome-x11-touchpad-gestures.rules"
 
 
-def sealed(home, stubs, **extra):
-    """An environment that carries nothing of the real session with it."""
-    return dict(
-        HOME=str(home), USER="tester", LANG="C.UTF-8",
-        PATH=f"{stubs}{os.pathsep}/usr/bin{os.pathsep}/bin", **extra)
+# The only programs a script under test can reach. Anything else it tries to
+# run is not found, so a command added to a script later cannot get out to
+# the real system through a test.
+# Found here, in the test's own environment, and run by its full path: the
+# scripts themselves get a PATH that does not include it.
+BASH = shutil.which("bash")
+ALLOWED = ("dirname", "cmp", "python3", "mkdir", "cp", "mv", "rm", "install",
+           "chmod", "sleep", "id", "tr", "wc")
 
 
 def write_stub(path, body):
@@ -30,14 +34,29 @@ def write_stub(path, body):
     path.chmod(path.stat().st_mode | stat.S_IXUSR)
 
 
+def make_bin(directory, stubs):
+    """A directory to be the whole PATH: stand-ins, and the allowed programs."""
+    directory.mkdir()
+    for name in ALLOWED:
+        (directory / name).symlink_to(shutil.which(name))
+    for name, body in stubs.items():
+        write_stub(directory / name, body)
+    return directory
+
+
+def sealed(home, bin_directory, **extra):
+    """An environment that carries nothing of the real session with it."""
+    return dict(HOME=str(home), USER="tester", LANG="C.UTF-8",
+                PATH=str(bin_directory), **extra)
+
+
 # If a script ever did run when sourced, these keep it from touching the
 # system: privileged and service commands become failing stubs, and HOME
 # points at an empty directory.
 SANDBOX = tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-")
-STUBS = pathlib.Path(SANDBOX.name) / "bin"
-STUBS.mkdir()
-for name in ("sudo", "systemctl"):
-    write_stub(STUBS / name, f'echo "stub: {name} was called" >&2\nexit 97\n')
+STUBS = make_bin(pathlib.Path(SANDBOX.name) / "bin", {
+    name: f'echo "stub: {name} was called" >&2\nexit 97\n'
+    for name in ("sudo", "systemctl", "udevadm")})
 ENVIRONMENT = sealed(SANDBOX.name, STUBS)
 
 # What the stand-in udevadm reports: one touchpad.
@@ -54,27 +73,25 @@ def recording_sandbox(status_exit=0):
     """
     with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as sandbox:
         home = pathlib.Path(sandbox) / "home"
-        stubs = pathlib.Path(sandbox) / "bin"
         log = pathlib.Path(sandbox) / "log"
         home.mkdir()
-        stubs.mkdir()
         log.touch()
-        write_stub(stubs / "sudo", f'echo "sudo $*" >> "{log}"\n')
-        write_stub(stubs / "systemctl",
-                   f'echo "systemctl $*" >> "{log}"\n'
-                   f'case "$*" in *status*) exit {status_exit};; esac\n')
-        write_stub(stubs / "udevadm",
-                   f'echo "udevadm $*" >> "{log}"\n'
-                   f'case "$*" in\n'
-                   f'  *--dry-run*) echo "{FAKE_SYSFS}";;\n'
-                   f'  info*) echo "input/event9";;\n'
-                   f'esac\n')
+        stubs = make_bin(pathlib.Path(sandbox) / "bin", {
+            "sudo": f'echo "sudo $*" >> "{log}"\n',
+            "systemctl": (f'echo "systemctl $*" >> "{log}"\n'
+                          f'case "$*" in *status*) exit {status_exit};; esac\n'),
+            "udevadm": (f'echo "udevadm $*" >> "{log}"\n'
+                        f'case "$*" in\n'
+                        f'  *--dry-run*) echo "{FAKE_SYSFS}";;\n'
+                        f'  info*) echo "input/event9";;\n'
+                        f'esac\n'),
+        })
         environment = sealed(home, stubs, RECORDING_LOG=str(log))
 
         def run(script, snippet, *args):
             # The script must not be $0, or it would believe it was run directly.
             return subprocess.run(
-                ["bash", "-c", 'source "$1"; shift; ' + snippet, "bash",
+                [BASH, "-c", 'source "$1"; shift; ' + snippet, "bash",
                  str(INSTALL / script), *args],
                 capture_output=True, text=True, timeout=30, env=environment)
 
@@ -93,7 +110,7 @@ def call(script, function, *args):
     # The script must not be $0, or it would believe it was run directly.
     command = 'source "$1"; shift; "$@"'
     return subprocess.run(
-        ["bash", "-c", command, "bash", str(INSTALL / script), function, *args],
+        [BASH, "-c", command, "bash", str(INSTALL / script), function, *args],
         capture_output=True, text=True, timeout=30, env=ENVIRONMENT)
 
 
@@ -255,6 +272,24 @@ class ProgramIsCopiedTest(unittest.TestCase):
             self.assertEqual(self.modules(home / PROGRAM / "gnome_x11_touchpad_gestures"),
                              self.modules(REPO / "gnome_x11_touchpad_gestures"))
 
+    def test_installing_twice_leaves_only_the_program(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", "install_service")
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sorted(path.name for path in (home / PROGRAM).iterdir()),
+                [PACKAGE])
+
+    def test_stray_file_where_the_program_goes_is_replaced(self):
+        with recording_sandbox() as (home, run, _):
+            (home / PROGRAM).mkdir(parents=True)
+            (home / PROGRAM / PACKAGE).write_text("not a directory")
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.modules(home / PROGRAM / PACKAGE),
+                             self.modules(REPO / PACKAGE))
+
     def test_installer_does_not_insist_on_one_location(self):
         script = (INSTALL / "install.sh").read_text()
         self.assertNotIn('"$repo" !=', script)
@@ -269,6 +304,93 @@ class ProgramIsCopiedTest(unittest.TestCase):
             self.assertFalse((home / PROGRAM).exists())
             self.assertFalse(
                 (home / ".config/systemd/user/gnome-x11-touchpad-gestures.service").exists())
+
+
+class SealTest(unittest.TestCase):
+    """The tests above are only safe if a script cannot reach the real system."""
+
+    def test_program_that_is_not_allowed_is_not_found(self):
+        for program in ("gsettings", "loginctl", "setfacl", "xinput", "apt"):
+            with self.subTest(program=program):
+                result = call("install.sh", "command", "-v", program)
+                self.assertNotEqual(result.returncode, 0, result.stdout)
+
+    def test_real_sudo_systemctl_and_udevadm_are_out_of_reach(self):
+        for program in ("sudo", "systemctl", "udevadm"):
+            with self.subTest(program=program):
+                result = call("install.sh", "command", "-v", program)
+                self.assertTrue(result.stdout.startswith(str(STUBS)), result.stdout)
+
+    def test_nothing_of_the_session_is_passed_on(self):
+        result = call("install.sh", "export", "-p")
+        self.assertIn("HOME=", result.stdout)
+        for name in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY", "XDG_RUNTIME_DIR",
+                     "XAUTHORITY", "SSH_AUTH_SOCK"):
+            with self.subTest(name=name):
+                self.assertNotIn(name, result.stdout)
+
+
+class UpgradeTest(unittest.TestCase):
+    """The project was once installed under another name. An upgrade clears it."""
+
+    FORMER = "finger-drag"
+    ACCESS = 'check_access() { return 0; }; '
+
+    def plant(self, home):
+        unit = home / ".config/systemd/user" / f"{self.FORMER}.service"
+        program = home / ".local/share" / self.FORMER / "finger_drag"
+        unit.parent.mkdir(parents=True)
+        unit.write_text("[Service]\n")
+        program.mkdir(parents=True)
+        (program / "daemon.py").write_text("")
+        return unit, program.parent
+
+    def rules(self, home, *names):
+        directory = home / "rules"
+        directory.mkdir()
+        for name in names:
+            (directory / name).write_text((INSTALL / RULE).read_text())
+        return str(directory)
+
+    def test_install_removes_the_former_service_and_program(self):
+        with recording_sandbox() as (home, run, commands):
+            unit, program = self.plant(home)
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(unit.exists())
+            self.assertFalse(program.exists())
+            log = commands()
+            stopped = log.index(f"systemctl --user disable --now {self.FORMER}.service")
+            self.assertLess(stopped, log.index(f"systemctl --user restart {UNIT}"))
+
+    def test_former_rule_is_a_reason_to_ask_for_a_password(self):
+        with recording_sandbox() as (home, run, _):
+            rules = self.rules(home, RULE, f"71-{self.FORMER}.rules")
+            result = run("install.sh", self.ACCESS +
+                         'rules_dir="$1"; needs_sudo && echo yes || echo no', rules)
+            self.assertEqual(result.stdout.strip(), "yes")
+
+    def test_install_removes_the_former_rule_before_udev_looks_again(self):
+        with recording_sandbox() as (home, run, commands):
+            rules = self.rules(home, RULE, f"71-{self.FORMER}.rules")
+            result = run("install.sh", self.ACCESS + 'rules_dir="$1"; main_as 1000', rules)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = commands()
+            removed = log.index(f"sudo rm -f {rules}/71-{self.FORMER}.rules")
+            self.assertLess(removed, log.index("sudo udevadm control --reload"))
+
+    def test_uninstall_removes_what_the_former_version_installed(self):
+        with recording_sandbox() as (home, run, commands):
+            unit, program = self.plant(home)
+            rules = self.rules(home, RULE, f"71-{self.FORMER}.rules")
+            result = run("uninstall.sh", 'rules_dir="$1"; main_as 1000', rules)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(unit.exists())
+            self.assertFalse(program.exists())
+            log = commands()
+            self.assertIn(f"sudo rm -f {rules}/71-{self.FORMER}.rules", log)
+            self.assertIn(f"sudo rm -f {rules}/{RULE}", log)
+            self.assertIn(f"systemctl --user disable --now {self.FORMER}.service", log)
 
 
 class SudoOnlyWhenNeededTest(unittest.TestCase):
@@ -316,6 +438,7 @@ class SudoOnlyWhenNeededTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual([c for c in commands() if c.startswith("sudo")], [])
             self.assertIn("exit status 1", result.stderr)
+            self.assertNotIn("access is granted", result.stdout)
             self.assertFalse((home / PROGRAM).exists())
 
     def test_install_finishes_when_the_service_is_not_started_yet(self):
@@ -469,7 +592,7 @@ class UninstallScriptTest(unittest.TestCase):
     def test_touchpad_nodes_on_this_machine(self):
         """The one test here that asks the real udev, and changes nothing."""
         result = subprocess.run(
-            ["bash", "-c", 'source "$1"; touchpad_nodes', "bash",
+            [BASH, "-c", 'source "$1"; touchpad_nodes', "bash",
              str(INSTALL / "uninstall.sh")],
             capture_output=True, text=True, timeout=30,
             env=dict(ENVIRONMENT, PATH="/usr/bin:/bin"))
