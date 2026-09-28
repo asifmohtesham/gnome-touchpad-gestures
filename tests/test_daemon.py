@@ -97,8 +97,8 @@ class GlidesTest(unittest.TestCase):
     class Shell:
         overview_open = False
 
-        def overview_is_open(self):
-            return self.overview_open
+        def may_glide(self):
+            return not self.overview_open
 
     def flick(self, machine):
         for i in range(12):
@@ -242,6 +242,36 @@ class FindTouchpadTest(unittest.TestCase):
         self.having()
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(daemon.check(), daemon.EXIT_NO_ACCESS)
+
+    def checked(self, loaded):
+        class Shell:
+            def extension_version(self):
+                return loaded
+
+        self.having(event8=MULTITOUCH + (BUS_I2C,))
+        with mock.patch.object(daemon, "Shell", Shell), \
+                mock.patch.object(daemon.os, "access", return_value=True), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            status = daemon.check()
+        return status, stdout.getvalue()
+
+    def test_check_says_the_extension_is_answering(self):
+        status, said = self.checked(daemon.__version__)
+        self.assertEqual(status, 0)
+        self.assertIn(f"extension: answering, version {daemon.__version__}", said)
+
+    def test_check_says_how_to_load_an_extension_that_is_not_answering(self):
+        status, said = self.checked(None)
+        self.assertEqual(status, 0)
+        self.assertIn("extension: not answering", said)
+        self.assertIn("Alt+F2", said)
+
+    def test_check_says_when_the_shell_still_runs_an_older_extension(self):
+        status, said = self.checked("0.0.1")
+        self.assertEqual(status, 0)
+        self.assertIn("0.0.1", said)
+        self.assertIn(daemon.__version__, said)
+        self.assertIn("Alt+F2", said)
 
     def test_the_three_exit_statuses_are_distinct(self):
         self.assertEqual(

@@ -12,6 +12,8 @@ DRAG_SETTLE_S = 0.05
 DRAG_RELEASE_S = 0.3
 POINTER_COUNTS_PER_MM = 12.0
 SWIPE_MM = 15.0
+SWIPE_BEGIN_MM = 4.0      # a sideways swipe is taken up once it has gone this far
+SWIPE_FULL_MM = 40.0      # finger travel that moves one whole workspace
 SWIPE_AXIS_RATIO = 1.5
 SWIPE_TOGETHER_MM = 2.0  # travel over which the fingers are compared
 
@@ -48,7 +50,60 @@ class Overview:
     show: bool
 
 
-Action = ButtonDown | ButtonUp | Move | SwitchWorkspace | Overview
+@dataclass(frozen=True)
+class SwipeBegin:
+    """A sideways swipe of four fingers has set off."""
+    t: float
+
+
+@dataclass(frozen=True)
+class SwipeMove:
+    """How far the fingers went since the last report, in millimetres."""
+    t: float
+    dx: float
+
+
+@dataclass(frozen=True)
+class SwipeEnd:
+    """The fingers have left; whether the workspace changes is decided now."""
+    t: float
+
+
+@dataclass(frozen=True)
+class SwipeCancel:
+    """The swipe is abandoned; the workspace goes back where it was."""
+
+
+Action = (ButtonDown | ButtonUp | Move | SwitchWorkspace | Overview
+          | SwipeBegin | SwipeMove | SwipeEnd | SwipeCancel)
+
+
+class Snap:
+    """One switch of workspace out of a swipe.
+
+    For a desktop that cannot move the workspace along with the fingers: the
+    swipe becomes a single switch once it has gone `SWIPE_MM`, and nothing
+    more however far it goes on.
+    """
+
+    def __init__(self) -> None:
+        self._travel = 0.0
+        self._open = False
+
+    def feed(self, action) -> list[SwitchWorkspace]:
+        if isinstance(action, SwipeBegin):
+            self._travel = 0.0
+            self._open = True
+        elif isinstance(action, SwipeMove) and self._open:
+            self._travel += action.dx
+            if abs(self._travel) >= SWIPE_MM:
+                self._open = False
+                # Content follows the fingers: moving left reveals the next.
+                return [SwitchWorkspace(
+                    Direction.NEXT if self._travel < 0 else Direction.PREVIOUS)]
+        elif isinstance(action, (SwipeEnd, SwipeCancel)):
+            self._open = False
+        return []
 
 
 class State(enum.Enum):
@@ -56,6 +111,7 @@ class State(enum.Enum):
     DRAGGING = "dragging"
     RELEASE_WAIT = "release_wait"
     SWIPE_TRACKING = "swipe_tracking"
+    SWIPE_FOLLOWING = "swipe_following"
     SWIPE_DONE = "swipe_done"
 
 
@@ -102,13 +158,20 @@ class GestureMachine:
         elif self.state is State.RELEASE_WAIT:
             actions += self._release_wait(count)
         elif self.state is State.SWIPE_TRACKING:
-            actions += self._swipe_tracking(count, dx, dy)
+            actions += self._swipe_tracking(t, count, dx, dy)
+        elif self.state is State.SWIPE_FOLLOWING:
+            actions += self._swipe_following(t, count, dx)
         else:
             actions += self._swipe_done(count)
         return actions
 
     def interrupt(self, t: float) -> list[Action]:
         """Finger state was lost; end the gesture as if every finger lifted."""
+        if self.state is State.SWIPE_FOLLOWING:
+            # Where the fingers are is unknown, so how the swipe ended is
+            # too. The workspace goes back, as the safer of the two.
+            self.update(t, 0, 0.0, 0.0)
+            return [SwipeCancel()]
         return self.update(t, 0, 0.0, 0.0)
 
     def _delta(self, t: float, count: int, cx: float, cy: float,
@@ -174,7 +237,8 @@ class GestureMachine:
             self._deadline = None
         return []
 
-    def _swipe_tracking(self, count: int, dx: float, dy: float) -> list[Action]:
+    def _swipe_tracking(self, t: float, count: int, dx: float,
+                        dy: float) -> list[Action]:
         if count == 0:
             self._enter_idle()
             return []
@@ -191,15 +255,28 @@ class GestureMachine:
                        self._swipe[1] + self._pending[1])
         self._pending = (0.0, 0.0)
         sx, sy = self._swipe
-        if abs(sx) >= SWIPE_MM and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
-            self.state = State.SWIPE_DONE
-            # Content follows the fingers: moving left reveals the next one.
-            return [SwitchWorkspace(Direction.NEXT if sx < 0 else Direction.PREVIOUS)]
+        # Sideways, the swipe is taken up early and reported as it goes, so
+        # that the workspace can move under the fingers. Up and down, it is
+        # one action once it has gone the whole distance.
+        under_way = math.hypot(sx, sy) >= SWIPE_BEGIN_MM
+        if under_way and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
+            self.state = State.SWIPE_FOLLOWING
+            return [SwipeBegin(t), SwipeMove(t, sx)]
         if abs(sy) >= SWIPE_MM and abs(sy) >= SWIPE_AXIS_RATIO * abs(sx):
             self.state = State.SWIPE_DONE
             # The pad's y grows towards the user, so moving up is negative.
             return [Overview(show=sy < 0)]
         return []
+
+    def _swipe_following(self, t: float, count: int, dx: float) -> list[Action]:
+        if count == 0:
+            self._enter_idle()
+            return [SwipeEnd(t)]
+        if count < 4 or not dx:
+            # Fewer fingers are fingers on their way off, or one that
+            # slipped. Their motion is not the swipe's.
+            return []
+        return [SwipeMove(t, dx)]
 
     def _swiping_together(self) -> bool:
         """Whether every contact is part of the swipe, not resting beside it."""

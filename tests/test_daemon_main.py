@@ -123,12 +123,57 @@ def four_fingers_at(y):
 class FakeShell:
     requests = []
     overview_open = False
+    follows_fingers = True
+    swipes = []
 
     def show_overview(self, show):
         FakeShell.requests.append(show)
 
-    def overview_is_open(self):
-        return FakeShell.overview_open
+    def may_glide(self):
+        return not FakeShell.overview_open
+
+    def swipe_begin(self, t):
+        FakeShell.swipes.append("begin")
+        return FakeShell.follows_fingers
+
+    def swipe_update(self, t, fraction):
+        FakeShell.swipes.append(round(fraction, 3))
+
+    def swipe_end(self, t):
+        FakeShell.swipes.append("end")
+
+    def swipe_cancel(self):
+        FakeShell.swipes.append("cancel")
+
+
+def four_fingers_across(x):
+    """Four fingers in a row, the leftmost at x, 10 units to the millimetre."""
+    events = []
+    for slot in range(4):
+        events += [
+            Event(e.EV_ABS, e.ABS_MT_SLOT, slot),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, 700 + slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_X, x + 150 * slot),
+            Event(e.EV_ABS, e.ABS_MT_POSITION_Y, 300),
+        ]
+    return events + [Event(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+def four_fingers_lift():
+    events = []
+    for slot in range(4):
+        events += [
+            Event(e.EV_ABS, e.ABS_MT_SLOT, slot),
+            Event(e.EV_ABS, e.ABS_MT_TRACKING_ID, -1),
+        ]
+    return events + [Event(e.EV_KEY, e.BTN_TOUCH, 0),
+                     Event(e.EV_SYN, e.SYN_REPORT, 0)]
+
+
+def swipe_left():
+    """60 mm to the left in steps of 10, then every finger up."""
+    return [(lambda x=x: four_fingers_across(x))
+            for x in range(800, 199, -100)] + [four_fingers_lift]
 
 
 def two_fingers_at(y):
@@ -185,6 +230,8 @@ class MainTest(unittest.TestCase):
         self.devices = {}
         FakeShell.requests = []
         FakeShell.overview_open = False
+        FakeShell.follows_fingers = True
+        FakeShell.swipes = []
         FakeUInput.cannot_be_created = set()
         FakeUInput.cannot_be_closed = set()
         FakeUInput.cannot_be_written = set()
@@ -198,6 +245,17 @@ class MainTest(unittest.TestCase):
 
     def closed(self):
         return {name for name, device in self.devices.items() if device.closed}
+
+    def test_startup_line_names_the_version(self):
+        import gnome_x11_touchpad_gestures
+        touchpad = FakeTouchpad([interrupt])
+        with mock.patch.object(daemon, "find_touchpad", return_value=touchpad), \
+                mock.patch.object(daemon.os, "access", return_value=True), \
+                mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
+                mock.patch.object(daemon, "Shell", FakeShell), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            daemon.main([])
+        self.assertIn(gnome_x11_touchpad_gestures.__version__, stdout.getvalue())
 
     def run_main(self, touchpad):
         if touchpad is not None:
@@ -313,6 +371,40 @@ class MainTest(unittest.TestCase):
 
         self.assertGreater(len(self.wheel_units()), 5)
         self.assertEqual(self.written_after_touch, 0)
+
+    def keys_pressed(self):
+        return [code for etype, code, value in self.devices[KEYBOARD].written
+                if etype == e.EV_KEY and value == 1]
+
+    def test_sideways_swipe_is_followed_by_a_shell_that_can(self):
+        touchpad = FakeTouchpad(swipe_left() + [interrupt])
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        self.assertEqual(FakeShell.swipes[0], "begin")
+        self.assertEqual(FakeShell.swipes[-1], "end")
+        moved = [s for s in FakeShell.swipes if not isinstance(s, str)]
+        self.assertAlmostEqual(sum(moved), 60.0 / 40.0, places=2)
+        self.assertTrue(all(step > 0 for step in moved))
+        self.assertEqual(self.keys_pressed(), [])
+
+    def test_sideways_swipe_falls_back_to_the_keyboard(self):
+        FakeShell.follows_fingers = False
+        touchpad = FakeTouchpad(swipe_left() + [interrupt])
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        self.assertEqual(FakeShell.swipes, ["begin"])
+        self.assertEqual(self.keys_pressed(),
+                         [e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_RIGHT])
+
+    def test_shutdown_during_a_swipe_puts_the_workspace_back(self):
+        touchpad = FakeTouchpad(swipe_left()[:4] + [interrupt])
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        self.assertEqual(FakeShell.swipes[0], "begin")
+        self.assertEqual(FakeShell.swipes[-1], "cancel")
 
     def test_four_finger_swipe_up_asks_the_shell_for_the_overview(self):
         touchpad = FakeTouchpad([

@@ -646,6 +646,92 @@ This is the one action that does not go through a virtual device, and the
 one part that works on GNOME only. It uses `python3-dbus`, which is already
 installed.
 
+## The shell extension (added 2026-09-28, version 0.2.0)
+
+Two things cannot be done from outside GNOME Shell. Moving a workspace
+gradually, since the only thing a key press can say is "switch". And
+knowing what the pointer is over, since the dock on this machine hides
+itself and reserves no part of the screen that could be compared with the
+pointer's position. Both are done by a small extension,
+`gnome-x11-touchpad-gestures@asifmohtesham.github.io`.
+
+It exports one object on the shell's session bus connection, at
+`/io/github/asifmohtesham/Gestures`:
+
+| Call | Meaning |
+|---|---|
+| `Version` (property) | The version loaded, which may be older than the one installed |
+| `PointerOverWindow() -> b` | The pointer is over a window or the desktop, and the overview is closed |
+| `SwipeBegin(u time) -> b` | A swipe has set off. True if the shell took it up |
+| `SwipeUpdate(u time, d fraction)` | The fingers went this share of a workspace further. Positive is towards the next |
+| `SwipeEnd(u time)` | The fingers have left. The shell completes the switch or springs back |
+| `SwipeCancel()` | Put the workspace back where it was |
+
+Times are milliseconds. The shell works out the speed of the swipe from
+them, and that decides whether a short, quick swipe changes workspace.
+
+### How it moves the workspace
+
+The shell has a swipe tracker for workspaces, fed on Wayland by its own
+touchpad gesture through three private methods. On X11 nothing feeds it:
+mutter's X11 backend takes no touchpad gesture events. The extension calls
+the same three methods, `_beginGesture`, `_updateGesture` and
+`_endTouchpadGesture`, with the distance the shell's own gesture uses (400
+for one workspace). The shell then does everything else as it would for a
+native gesture: following, snapping, springing back.
+
+These are private to the shell and may change. Every call is guarded, so a
+shell that has changed gets no swipe instead of a fault, and `SwipeBegin`
+answers false unless the shell has confirmed the swipe. A swipe that hears
+nothing for a second is put back, in case the daemon has gone.
+
+### How it is split
+
+`gestures.js` holds the logic and imports nothing from the shell, so it is
+tested outside one, with `gjs` and stand-ins. `extension.js` hands it the
+pieces of the shell and exports the object. It cannot be run outside the
+shell; it is checked for syntax, and for offering exactly the calls the
+daemon makes.
+
+### The daemon's side
+
+The gesture machine takes a sideways swipe up once it has gone
+`SWIPE_BEGIN_MM` with the contacts moving together, and then reports it as
+it goes: `SwipeBegin`, a `SwipeMove` for each frame, `SwipeEnd` when every
+finger is up, `SwipeCancel` if finger state was lost. A swipe up or down is
+still one action after `SWIPE_MM`.
+
+The output asks the shell at every `SwipeBegin` whether it takes the swipe
+up. If it does, moves are sent on as shares of `SWIPE_FULL_MM`, without
+waiting for an answer, so that the fingers are not tied to how fast the
+shell replies. If it does not, the moves go to `Snap`, which makes one
+switch of workspace out of them after `SWIPE_MM`, by the key chord as
+before.
+
+Momentum asks `may_glide`: the extension's `PointerOverWindow` if it
+answers, and otherwise only whether the overview is open. The extension not
+answering is the ordinary case before it is installed. It is logged once,
+and the extension is then left alone for `SHELL_RETRY_S`.
+
+### Installing it
+
+The installer copies it to `~/.local/share/gnome-shell/extensions/`, built
+beside the old copy and swapped in, as the program is. It asks the shell to
+switch it on. A shell that has not seen the extension yet cannot, so it is
+then added to the list of enabled extensions in the settings, which the
+shell reads when it starts. A list that cannot be read is not written.
+
+The shell loads an extension when it starts, so a new or changed one needs
+the shell restarted. On X11 that keeps the windows open. `--check` reports
+which version the shell has loaded.
+
+## Version numbers (added 2026-09-28)
+
+One version, written in the package's `__init__.py`. The extension's
+metadata and the newest entry in `CHANGELOG.md` must agree with it, and
+tests hold them to it. `--version` prints it and the service logs it when it
+starts. The README names no version, so that there is one place to change.
+
 ## Upgrading from the former name (added 2026-09-28)
 
 The project was first published as `finger-drag`, and installed a unit, a
@@ -658,6 +744,6 @@ already in place. This is the only place the former name is still written.
 
 ## Out of scope
 
-Configuration file, animated workspace
-transitions, GUI or tray icon, using more than one touchpad at a time,
+Configuration file, an overview that
+follows the fingers, GUI or tray icon, using more than one touchpad at a time,
 Wayland-specific handling.

@@ -3,16 +3,38 @@ import unittest
 
 from gnome_x11_touchpad_gestures import gestures as g
 from gnome_x11_touchpad_gestures.gestures import (
-    ButtonDown, ButtonUp, Direction, GestureMachine, Move, Overview, State,
-    SwitchWorkspace)
+    ButtonDown, ButtonUp, Direction, GestureMachine, Move, Overview, Snap,
+    State, SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
 
 
-def feed(machine, frames):
-    """Feed (t, count, cx, cy) frames; return every action in order."""
+SWIPE = (SwipeBegin, SwipeMove, SwipeEnd, SwipeCancel)
+
+
+def snapped(machine, actions):
+    """What a desktop that cannot follow the fingers makes of these actions.
+
+    A sideways swipe is reported as it goes, for a shell that moves the
+    workspace along with it. Without such a shell the swipe is turned into
+    one switch of workspace, which is what most tests here ask about.
+    """
+    snap = machine.__dict__.setdefault("snap_for_tests", Snap())
+    seen = []
+    for action in actions:
+        seen += snap.feed(action) if isinstance(action, SWIPE) else [action]
+    return seen
+
+
+def raw(machine, frames):
+    """Feed (t, count, cx, cy) frames; return every action exactly as made."""
     actions = []
     for t, count, cx, cy in frames:
         actions += machine.update(t, count, cx, cy)
     return actions
+
+
+def feed(machine, frames):
+    """Feed (t, count, cx, cy) frames; return every action in order."""
+    return snapped(machine, raw(machine, frames))
 
 
 def start_drag(machine):
@@ -38,12 +60,141 @@ def touch(machine, paths, start=0.0, step=0.01):
         cy = sum(p[1] for p in positions) / len(positions)
         actions += machine.update(start + i * step, len(positions), cx, cy,
                                   fingers=tuple(positions))
-    return actions
+    return snapped(machine, actions)
 
 
 def row(y, velocity, count=4, **kwargs):
     """Fingers side by side, 15 mm apart, all moving alike."""
     return [line((20.0 + 15.0 * i, y), velocity, **kwargs) for i in range(count)]
+
+
+class FollowingTest(unittest.TestCase):
+    """A sideways swipe is reported as it goes, so that the workspace can move
+    under the fingers."""
+
+    def setUp(self):
+        self.machine = GestureMachine()
+
+    def swipe(self, *xs, y=25.0, start=0.0):
+        return raw(self.machine, [
+            (start + i * 0.01, 4, x, y) for i, x in enumerate(xs)])
+
+    def test_nothing_is_said_until_the_swipe_is_under_way(self):
+        self.assertEqual(self.swipe(60.0, 58.0, 57.0), [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+
+    def test_swipe_begins_with_the_travel_made_so_far(self):
+        actions = self.swipe(60.0, 58.0, 55.0)
+        self.assertEqual(actions, [SwipeBegin(0.02), SwipeMove(0.02, -5.0)])
+        self.assertIs(self.machine.state, State.SWIPE_FOLLOWING)
+
+    def test_every_frame_after_reports_how_far_the_fingers_went(self):
+        self.swipe(60.0, 55.0)
+        self.assertEqual(self.machine.update(0.02, 4, 52.5, 25.0),
+                         [SwipeMove(0.02, -2.5)])
+        self.assertEqual(self.machine.update(0.03, 4, 51.0, 25.5),
+                         [SwipeMove(0.03, -1.5)])
+
+    def test_fingers_that_did_not_move_report_nothing(self):
+        self.swipe(60.0, 55.0)
+        self.assertEqual(self.machine.update(0.02, 4, 55.0, 25.0), [])
+
+    def test_fingers_may_turn_back(self):
+        self.swipe(60.0, 50.0)
+        self.assertEqual(self.machine.update(0.02, 4, 56.0, 25.0),
+                         [SwipeMove(0.02, 6.0)])
+
+    def test_nothing_of_the_travel_is_lost(self):
+        actions = self.swipe(80.0, 79.0, 77.0, 72.0, 64.0, 50.0, 41.0, 40.5)
+        moved = sum(a.dx for a in actions if isinstance(a, SwipeMove))
+        self.assertAlmostEqual(moved, 40.5 - 80.0)
+
+    def test_lifting_every_finger_ends_the_swipe(self):
+        self.swipe(60.0, 50.0)
+        self.assertEqual(self.machine.update(0.5, 0, 0.0, 0.0), [SwipeEnd(0.5)])
+        self.assertIs(self.machine.state, State.IDLE)
+
+    def test_swipe_is_begun_and_ended_once_each(self):
+        actions = self.swipe(60.0, 50.0, 40.0, 30.0)
+        actions += self.machine.update(0.5, 0, 0.0, 0.0)
+        actions += self.machine.update(0.6, 0, 0.0, 0.0)
+        kinds = [type(a).__name__ for a in actions]
+        self.assertEqual(kinds.count("SwipeBegin"), 1)
+        self.assertEqual(kinds.count("SwipeEnd"), 1)
+        self.assertEqual(kinds[0], "SwipeBegin")
+        self.assertEqual(kinds[-1], "SwipeEnd")
+
+    def test_fingers_lifting_one_after_another_end_it_when_all_are_up(self):
+        self.swipe(60.0, 50.0)
+        self.assertEqual(self.machine.update(0.02, 3, 45.0, 25.0), [])
+        self.assertEqual(self.machine.update(0.03, 2, 30.0, 25.0), [])
+        self.assertEqual(self.machine.update(0.04, 0, 0.0, 0.0), [SwipeEnd(0.04)])
+
+    def test_finger_that_slips_off_and_returns_does_not_jolt_the_workspace(self):
+        self.swipe(60.0, 50.0)
+        self.machine.update(0.02, 3, 20.0, 25.0)
+        self.assertEqual(self.machine.update(0.03, 4, 49.0, 25.0), [])
+        self.assertEqual(self.machine.update(0.04, 4, 47.0, 25.0),
+                         [SwipeMove(0.04, -2.0)])
+
+    def test_lost_finger_state_puts_the_workspace_back(self):
+        self.swipe(60.0, 50.0)
+        self.assertEqual(self.machine.interrupt(0.5), [SwipeCancel()])
+        self.assertIs(self.machine.state, State.IDLE)
+
+    def test_swipe_up_is_not_followed(self):
+        actions = raw(self.machine, [
+            (0.00, 4, 60.0, 40.0), (0.01, 4, 60.0, 30.0), (0.02, 4, 60.0, 20.0)])
+        self.assertEqual(actions, [Overview(show=True)])
+
+    def test_swipe_that_set_off_sideways_cannot_open_the_overview(self):
+        actions = self.swipe(60.0, 50.0)
+        actions += raw(self.machine, [(0.02, 4, 50.0, 5.0)])
+        self.assertNotIn(Overview(show=True), actions)
+        self.assertNotIn(Overview(show=False), actions)
+
+    def test_new_swipe_begins_afresh(self):
+        self.swipe(60.0, 50.0)
+        self.machine.update(0.5, 0, 0.0, 0.0)
+        actions = self.swipe(30.0, 36.0, start=1.0)
+        self.assertEqual(actions, [SwipeBegin(1.01), SwipeMove(1.01, 6.0)])
+
+
+class SnapTest(unittest.TestCase):
+    """One switch of workspace out of a swipe, where nothing can follow it."""
+
+    def setUp(self):
+        self.snap = Snap()
+
+    def feed(self, *actions):
+        return [made for action in actions for made in self.snap.feed(action)]
+
+    def test_swipe_far_enough_to_the_left_is_the_next_workspace(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0), SwipeMove(0.0, -8.0), SwipeMove(0.1, -8.0)),
+            [SwitchWorkspace(Direction.NEXT)])
+
+    def test_swipe_far_enough_to_the_right_is_the_previous_one(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0), SwipeMove(0.0, 16.0)),
+            [SwitchWorkspace(Direction.PREVIOUS)])
+
+    def test_short_swipe_is_nothing(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0), SwipeMove(0.0, -14.0), SwipeEnd(0.2)), [])
+
+    def test_only_one_switch_to_a_swipe(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0), SwipeMove(0.0, -20.0), SwipeMove(0.1, -20.0),
+                      SwipeMove(0.2, 60.0)),
+            [SwitchWorkspace(Direction.NEXT)])
+
+    def test_each_swipe_is_counted_from_nothing(self):
+        self.feed(SwipeBegin(0.0), SwipeMove(0.0, -14.0), SwipeEnd(0.2))
+        self.assertEqual(self.feed(SwipeBegin(1.0), SwipeMove(1.0, -14.0)), [])
+
+    def test_moves_without_a_swipe_are_nothing(self):
+        self.assertEqual(self.feed(SwipeMove(0.0, -40.0)), [])
 
 
 class SwipeNeedsEveryFingerTest(unittest.TestCase):
@@ -118,8 +269,8 @@ class SwipeNeedsEveryFingerTest(unittest.TestCase):
             for _ in range(3):
                 centre = (sum(f[0] for f in fingers) / len(fingers),
                           sum(f[1] for f in fingers) / len(fingers))
-                actions += self.machine.update(
-                    t, len(fingers), *centre, fingers=tuple(fingers))
+                actions += snapped(self.machine, self.machine.update(
+                    t, len(fingers), *centre, fingers=tuple(fingers)))
                 t += 0.007
                 x -= 1.4
                 fingers = [(fx - 1.4, fy) for fx, fy in fingers[:4]] + fingers[4:]
@@ -138,15 +289,14 @@ class SwipeNeedsEveryFingerTest(unittest.TestCase):
         for i, positions in enumerate(zip(*paths)):
             cx = sum(p[0] for p in positions) / 4
             cy = sum(p[1] for p in positions) / 4
-            actions += self.machine.update(
+            actions += snapped(self.machine, self.machine.update(
                 0.02 + i * 0.01, 4, cx, cy, regrouped=(i == 0),
-                fingers=tuple(positions))
+                fingers=tuple(positions)))
         self.assertEqual(actions, [])
 
     def test_swipe_fires_at_the_threshold_and_not_before(self):
         paths = row(25.0, (-250.0, 0.0), frames=7)        # 2.5 mm a frame
         self.assertEqual(touch(self.machine, [p[:6] for p in paths]), [])
-        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
         last = [p[6:] for p in paths]
         self.assertEqual(touch(self.machine, last, start=0.06),
                          [SwitchWorkspace(Direction.NEXT)])
@@ -162,9 +312,9 @@ class SwipeNeedsEveryFingerTest(unittest.TestCase):
         for i, positions in enumerate(zip(*together)):
             cx = sum(p[0] for p in positions) / 4
             cy = sum(p[1] for p in positions) / 4
-            actions += self.machine.update(
+            actions += snapped(self.machine, self.machine.update(
                 0.15 + i * 0.01, 4, cx, cy, regrouped=(i == 0),
-                fingers=tuple(positions))
+                fingers=tuple(positions)))
         self.assertEqual(actions, [])
 
     def test_fingers_fanning_slightly_still_swipe(self):
@@ -335,7 +485,7 @@ class FourFingerSwipeTest(unittest.TestCase):
             (0.02, 4, 44.0, 25.0),
         ])
         self.assertEqual(actions, [SwitchWorkspace(Direction.NEXT)])
-        self.assertIs(self.machine.state, State.SWIPE_DONE)
+        self.assertIs(self.machine.state, State.SWIPE_FOLLOWING)
 
     def test_fourth_finger_landing_late_does_not_click(self):
         # Three fingers are already moving fast when the fourth lands 21 ms in.
@@ -394,11 +544,10 @@ class FourFingerSwipeTest(unittest.TestCase):
             (0.00, 4, 60.0, 25.0),
             (0.01, 4, 52.0, 25.0),
         ])
-        self.assertEqual(
-            self.machine.update(0.02, 4, 30.0, 25.0, regrouped=True), [])
-        self.assertEqual(
-            self.machine.update(0.03, 4, 22.0, 25.0),
-            [SwitchWorkspace(Direction.NEXT)])
+        self.assertEqual(snapped(self.machine, self.machine.update(
+            0.02, 4, 30.0, 25.0, regrouped=True)), [])
+        self.assertEqual(snapped(self.machine, self.machine.update(
+            0.03, 4, 22.0, 25.0)), [SwitchWorkspace(Direction.NEXT)])
 
     def test_swipe_up_opens_the_overview(self):
         actions = feed(self.machine, [
@@ -497,7 +646,7 @@ class FourFingerSwipeTest(unittest.TestCase):
             (0.03, 3, 30.0, 25.0),
         ])
         self.assertEqual(actions, [])
-        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+        self.assertIs(self.machine.state, State.SWIPE_FOLLOWING)
 
     def test_uneven_lift_after_switch_cannot_start_drag(self):
         actions = feed(self.machine, [
