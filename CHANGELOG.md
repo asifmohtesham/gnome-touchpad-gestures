@@ -4,7 +4,7 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
-## 0.2.0 (unreleased)
+## 0.2.0 (2026-09-28)
 
 Added
 - Workspaces follow the fingers on a four-finger swipe sideways, and spring
