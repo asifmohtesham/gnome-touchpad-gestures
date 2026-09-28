@@ -9,6 +9,8 @@ former="finger-drag"
 unit="gnome-x11-touchpad-gestures.service"
 unit_file="$HOME/.config/systemd/user/$unit"
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
+extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+extension_dir="$HOME/.local/share/gnome-shell/extensions/$extension"
 
 touchpad_nodes() {
     local path
@@ -37,6 +39,10 @@ main_as() {
     rm -f "$unit_file" "$HOME/.config/systemd/user/$former.service"
     systemctl --user daemon-reload
     rm -rf "$program_dir" "$HOME/.local/share/$former"
+
+    echo "Switching off and removing the shell extension..."
+    gnome-extensions disable "$extension" 2>/dev/null || true
+    rm -rf "$extension_dir"
 
     echo "Removing udev rule and device access (needs sudo)..."
     sudo rm -f "$rules_dir/$rule"

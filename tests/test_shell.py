@@ -25,7 +25,10 @@ class FakeBus:
                            signature, tuple(args), timeout))
         if self.error:
             raise self.error
-        if interface == EXTENSION_INTERFACE:
+        asks_the_extension = (
+            interface == EXTENSION_INTERFACE
+            or (object_path == EXTENSION_PATH and method == "Get"))
+        if asks_the_extension:
             if self.extension_error:
                 raise self.extension_error
             return self.extension_answers.get(method)
@@ -304,6 +307,15 @@ class ExtensionTest(unittest.TestCase):
                            (self.shell.swipe_cancel, ())):
             with self.subTest(call=call.__name__):
                 self.quietly(call, *args)
+
+    def test_version_of_the_extension_that_is_loaded(self):
+        self.bus.extension_answers["Get"] = dbus.String("0.2.0")
+        self.bus.properties_of_the_extension = True
+        self.assertEqual(self.quietly(self.shell.extension_version), ("0.2.0", ""))
+
+    def test_no_version_without_the_extension(self):
+        self.bus.extension_error = self.MISSING
+        self.assertIsNone(self.quietly(self.shell.extension_version)[0])
 
     # A missing extension is the usual case, not a fault.
 

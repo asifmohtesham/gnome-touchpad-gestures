@@ -11,14 +11,14 @@ pointing, scrolling and tapping are untouched.
 | Gesture | Result |
 |---|---|
 | Three fingers, moving | Drags with the left button held |
-| Four fingers, swipe left | Next workspace (`Ctrl+Alt+Right`) |
-| Four fingers, swipe right | Previous workspace (`Ctrl+Alt+Left`) |
+| Four fingers, swipe left | The next workspace slides in under your fingers |
+| Four fingers, swipe right | The previous workspace, likewise |
 | Four fingers, swipe up | Open the Activities overview |
 | Four fingers, swipe down | Close the Activities overview |
 | Two fingers, flick and lift | The page keeps gliding and slows to a stop |
 | Flick again while it glides | The page glides faster, a little more each time |
 | Any touch during a glide | The glide stops at once |
-| Flick inside the overview | No glide. Scrolling there moves between workspaces |
+| Flick over the dock, the top bar, a menu or the overview | No glide. A wheel steps through things there |
 
 Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
@@ -82,6 +82,27 @@ that needs it, and refuses to run as root.
 
 If it says a re-login is needed, log out and in, then run it again.
 
+**Then restart GNOME Shell**, so that it loads the extension: press Alt+F2,
+type `r`, press Enter. Your windows stay open. Do the same after an update
+that changes the extension. `--check`, under Troubleshooting, says whether
+the shell has it loaded.
+
+### With and without the extension
+
+Part of this runs inside GNOME Shell, as an extension, because only the
+shell can move a workspace gradually or say what the pointer is over.
+Everything works without it, less well:
+
+| | With the extension | Without |
+|---|---|---|
+| Four-finger swipe sideways | The workspace follows your fingers, and springs back if you let go early | One switch, after 15 mm of travel |
+| Momentum | Only with the pointer over a window | Everywhere except in the overview |
+
+The extension uses parts of GNOME Shell that are not meant for extensions
+and can change from one version to the next. It is written for GNOME Shell
+46. On another version it may not load, or may load and decline every
+swipe; the gestures then behave as in the right-hand column.
+
 ### What the installer changes
 
 - **One udev rule**,
@@ -94,6 +115,9 @@ If it says a re-login is needed, log out and in, then run it again.
   `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It starts
   with your graphical session, and only if that session is X11.
 - **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
+- **The shell extension**, copied to
+  `~/.local/share/gnome-shell/extensions/gnome-x11-touchpad-gestures@asifmohtesham.github.io`
+  and switched on.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
@@ -134,7 +158,9 @@ with the udev rule already in place, does not ask for a password.
 | `DRAG_SETTLE_S` | 0.05 | stop a four-finger swipe from clicking as the fingers land |
 | `DRAG_RELEASE_S` | 0.3 | get more time to reposition fingers mid-drag |
 | `POINTER_COUNTS_PER_MM` | 12.0 | make the pointer faster while dragging |
-| `SWIPE_MM` | 15.0 | require a longer swipe, sideways or up and down |
+| `SWIPE_MM` | 15.0 | require a longer swipe up or down, or sideways without the extension |
+| `SWIPE_BEGIN_MM` | 4.0 | have the workspace wait longer before it starts to follow |
+| `SWIPE_FULL_MM` | 40.0 | need more finger travel to move one whole workspace |
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
 | `SWIPE_TOGETHER_MM` | 2.0 | compare the fingers over a longer stretch before a swipe counts |
 
@@ -208,7 +234,11 @@ Run after installing or changing a tunable.
 - [ ] Lift and re-place fingers mid-drag; the drag continues.
 - [ ] Three-finger tap still pastes (middle click).
 - [ ] Two-finger scroll and one-finger pointing are unchanged.
-- [ ] Four-finger swipe left and right switches workspace, once per swipe.
+- [ ] Four-finger swipe left and right moves the workspace under the
+      fingers. Let go past half way, or with a flick, and it changes;
+      let go early and it springs back.
+- [ ] A two-finger flick with the pointer over the dock or the top bar
+      does not glide.
 - [ ] Suspend and resume; gestures work again within a few seconds.
 - [ ] `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
 - [ ] Four-finger swipe up opens the overview; swiping up again leaves it
@@ -232,7 +262,10 @@ Run after installing or changing a tunable.
 
 - For a moment after lifting from a drag the button is still held, so a
   finger left on the pad can nudge the dragged item.
-- Workspace changes snap once per swipe; they do not follow the fingers.
+- Workspaces follow the fingers only with the extension loaded, and only
+  sideways. The overview still opens and closes in one step.
+- With GNOME's animations switched off, the workspace follows the fingers
+  but settles at once when you let go, without sliding into place.
 - Holding a physical modifier key while swiping changes what the key chord
   means to GNOME.
 - The overview is opened and closed by asking GNOME Shell directly, so that
@@ -246,14 +279,13 @@ Run after installing or changing a tunable.
 - For about a third of a second after any touch with three or more fingers,
   a two-finger flick does not glide. A drag still holds its button for that
   long, and the daemon does not tell a drag from a swipe or a tap here.
-- There is no glide while GNOME's overview is open. Every notch of a wheel
-  moves one workspace along there, so a glide would race through them.
-  Scrolling with your fingers on the pad works in the overview as before.
-- Other parts of the desktop that act on each notch still receive glides,
-  so avoid flicking with the pointer over them. The likeliest is the Ubuntu
-  Dock, where scrolling switches workspace, about seven of them in one
-  glide. Then the volume and microphone icons in the top bar, where a glide
-  runs the level to one end, and the sliders in the quick settings menu.
+- There is a glide only with the pointer over a window or the desktop
+  background. Over what GNOME Shell draws itself (the dock, the top bar, a
+  menu, the overview) a notch of the wheel steps through something,
+  workspaces or the volume, and a glide would race through it. Scrolling
+  with your fingers on the pad works there as before.
+- Without the extension only the overview is known about, and a glide over
+  the dock or the top bar does happen.
 - Repeated flicks build up speed only while they follow one another: each
   must land while the page still glides, or within a third of a second of
   it stopping, be a quick touch of no more than 0.6 s, and go the same way.

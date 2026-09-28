@@ -3,7 +3,8 @@ import unittest
 from evdev import ecodes as e
 
 from gnome_x11_touchpad_gestures.gestures import (
-    ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
+    SWIPE_FULL_MM, SWIPE_MM, ButtonDown, ButtonUp, Direction, Move, Overview,
+    SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
 from gnome_x11_touchpad_gestures.momentum import Scroll
 from gnome_x11_touchpad_gestures.output import (
     GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, Output)
@@ -27,13 +28,28 @@ class FakeShell:
         self.requests = []
         self.overview_open = False
         self.asked = 0
+        self.follows_fingers = True
+        self.swipes = []
 
     def show_overview(self, show):
         self.requests.append(show)
 
-    def overview_is_open(self):
+    def may_glide(self):
         self.asked += 1
-        return self.overview_open
+        return not self.overview_open
+
+    def swipe_begin(self, t):
+        self.swipes.append(("begin", t))
+        return self.follows_fingers
+
+    def swipe_update(self, t, fraction):
+        self.swipes.append(("update", t, fraction))
+
+    def swipe_end(self, t):
+        self.swipes.append(("end", t))
+
+    def swipe_cancel(self):
+        self.swipes.append(("cancel",))
 
 
 def total(events, code):
@@ -181,6 +197,83 @@ class OutputTest(unittest.TestCase):
         self.wheel.events.clear()
         self.output.emit([Scroll(0.0, 30.0)])
         self.assertIn((e.EV_REL, e.REL_WHEEL, 1), self.wheel.events)
+
+    NEXT_CHORD = [
+        (e.EV_KEY, e.KEY_LEFTCTRL, 1), SYN,
+        (e.EV_KEY, e.KEY_LEFTALT, 1), SYN,
+        (e.EV_KEY, e.KEY_RIGHT, 1), SYN,
+        (e.EV_KEY, e.KEY_RIGHT, 0), SYN,
+        (e.EV_KEY, e.KEY_LEFTALT, 0), SYN,
+        (e.EV_KEY, e.KEY_LEFTCTRL, 0), SYN,
+    ]
+
+    def test_swipe_is_passed_to_a_shell_that_follows_fingers(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0)])
+        self.output.emit([SwipeMove(1.01, -2.0)])
+        self.output.emit([SwipeEnd(1.2)])
+        self.assertEqual(self.shell.swipes, [
+            ("begin", 1.0),
+            ("update", 1.0, 5.0 / SWIPE_FULL_MM),
+            ("update", 1.01, 2.0 / SWIPE_FULL_MM),
+            ("end", 1.2),
+        ])
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_fingers_moving_left_move_towards_the_next_workspace(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -SWIPE_FULL_MM)])
+        self.assertEqual(self.shell.swipes[-1], ("update", 1.0, 1.0))
+        self.output.emit([SwipeMove(1.1, SWIPE_FULL_MM / 2)])
+        self.assertEqual(self.shell.swipes[-1], ("update", 1.1, -0.5))
+
+    def test_followed_swipe_presses_no_keys_however_far_it_goes(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -3 * SWIPE_MM),
+                          SwipeEnd(1.2)])
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_shell_that_cannot_follow_gets_one_switch_by_keyboard(self):
+        self.shell.follows_fingers = False
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -SWIPE_MM / 2)])
+        self.assertEqual(self.keyboard.events, [])
+        self.output.emit([SwipeMove(1.01, -SWIPE_MM / 2)])
+        self.assertEqual(self.keyboard.events, self.NEXT_CHORD)
+        self.output.emit([SwipeMove(1.02, -SWIPE_MM), SwipeEnd(1.2)])
+        self.assertEqual(self.keyboard.events, self.NEXT_CHORD)
+        self.assertEqual(self.shell.swipes, [("begin", 1.0)])
+
+    def test_every_swipe_asks_the_shell_anew(self):
+        self.shell.follows_fingers = False
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0), SwipeEnd(1.2)])
+        self.shell.follows_fingers = True
+        self.output.emit([SwipeBegin(2.0), SwipeMove(2.0, -5.0), SwipeEnd(2.2)])
+        self.assertEqual(self.shell.swipes, [
+            ("begin", 1.0), ("begin", 2.0),
+            ("update", 2.0, 5.0 / SWIPE_FULL_MM), ("end", 2.2)])
+        self.assertEqual(self.keyboard.events, [])
+
+    def test_swipe_begun_on_top_of_another_still_asks_the_shell(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0)])
+        self.shell.follows_fingers = False
+        self.output.emit([SwipeBegin(2.0), SwipeMove(2.0, -SWIPE_MM)])
+        self.assertEqual(self.shell.swipes.count(("begin", 2.0)), 1)
+        self.assertEqual(self.keyboard.events, self.NEXT_CHORD)
+
+    def test_abandoned_swipe_is_put_back(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0), SwipeCancel()])
+        self.assertEqual(self.shell.swipes[-1], ("cancel",))
+        self.output.emit([SwipeMove(1.1, -5.0), SwipeEnd(1.2)])
+        self.assertEqual(self.shell.swipes[-1], ("cancel",))
+
+    def test_abandoning_a_swipe_the_shell_never_took_says_nothing(self):
+        self.shell.follows_fingers = False
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0), SwipeCancel()])
+        self.assertEqual(self.shell.swipes, [("begin", 1.0)])
+
+    def test_release_all_puts_a_swipe_under_way_back(self):
+        self.output.emit([SwipeBegin(1.0), SwipeMove(1.0, -5.0)])
+        self.output.release_all()
+        self.assertEqual(self.shell.swipes[-1], ("cancel",))
+        self.output.release_all()
+        self.assertEqual(self.shell.swipes.count(("cancel",)), 1)
 
     def glide(self, steps, units=40.0):
         self.output.emit([Scroll(0.0, units, first=True)])

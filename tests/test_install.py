@@ -27,6 +27,8 @@ RULE = "71-gnome-x11-touchpad-gestures.rules"
 BASH = shutil.which("bash")
 ALLOWED = ("dirname", "cmp", "python3", "mkdir", "cp", "mv", "rm", "install",
            "chmod", "sleep", "id", "tr", "wc")
+EXTENSION = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+EXTENSIONS = ".local/share/gnome-shell/extensions"
 
 
 def write_stub(path, body):
@@ -56,7 +58,7 @@ def sealed(home, bin_directory, **extra):
 SANDBOX = tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-")
 STUBS = make_bin(pathlib.Path(SANDBOX.name) / "bin", {
     name: f'echo "stub: {name} was called" >&2\nexit 97\n'
-    for name in ("sudo", "systemctl", "udevadm")})
+    for name in ("sudo", "systemctl", "udevadm", "gnome-extensions", "gsettings")})
 ENVIRONMENT = sealed(SANDBOX.name, STUBS)
 
 # What the stand-in udevadm reports: one touchpad.
@@ -65,7 +67,8 @@ FAKE_NODE = "/dev/input/event9"
 
 
 @contextlib.contextmanager
-def recording_sandbox(status_exit=0):
+def recording_sandbox(status_exit=0, enabling_works=True,
+                      enabled="['ubuntu-dock@ubuntu.com']"):
     """An empty home where system commands succeed and are written to a log.
 
     Yields the home, a function that sources a script and runs a snippet of
@@ -80,6 +83,10 @@ def recording_sandbox(status_exit=0):
             "sudo": f'echo "sudo $*" >> "{log}"\n',
             "systemctl": (f'echo "systemctl $*" >> "{log}"\n'
                           f'case "$*" in *status*) exit {status_exit};; esac\n'),
+            "gnome-extensions": (f'echo "gnome-extensions $*" >> "{log}"\n'
+                                 f'exit {0 if enabling_works else 1}\n'),
+            "gsettings": (f'echo "gsettings $*" >> "{log}"\n'
+                          f'case "$1" in get) echo "{enabled}";; esac\n'),
             "udevadm": (f'echo "udevadm $*" >> "{log}"\n'
                         f'case "$*" in\n'
                         f'  *--dry-run*) echo "{FAKE_SYSFS}";;\n'
@@ -174,6 +181,7 @@ class ProgramIsCopiedTest(unittest.TestCase):
             self.assertEqual(installed.read_text(),
                              (INSTALL / "gnome-x11-touchpad-gestures.service").read_text())
             self.assertEqual(commands(), [
+                f"gnome-extensions enable {EXTENSION}",
                 "systemctl --user daemon-reload",
                 "systemctl --user enable gnome-x11-touchpad-gestures.service",
                 "systemctl --user restart gnome-x11-touchpad-gestures.service",
@@ -306,17 +314,96 @@ class ProgramIsCopiedTest(unittest.TestCase):
                 (home / ".config/systemd/user/gnome-x11-touchpad-gestures.service").exists())
 
 
+class ExtensionIsInstalledTest(unittest.TestCase):
+    def files(self, directory):
+        return {path.name: path.read_text()
+                for path in pathlib.Path(directory).iterdir() if path.is_file()}
+
+    def test_extension_is_copied_whole(self):
+        with recording_sandbox() as (home, run, _):
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.files(home / EXTENSIONS / EXTENSION),
+                             self.files(REPO / "extension" / EXTENSION))
+            self.assertEqual(
+                sorted(self.files(home / EXTENSIONS / EXTENSION)),
+                ["extension.js", "gestures.js", "metadata.json"])
+
+    def test_nothing_else_is_left_among_the_extensions(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", "install_service")
+            run("install.sh", "install_service")
+            self.assertEqual(
+                sorted(path.name for path in (home / EXTENSIONS).iterdir()),
+                [EXTENSION])
+
+    def test_other_extensions_are_left_alone(self):
+        with recording_sandbox() as (home, run, _):
+            other = home / EXTENSIONS / "someone@else.example"
+            other.mkdir(parents=True)
+            (other / "extension.js").write_text("// theirs")
+            run("install.sh", "install_service")
+            self.assertEqual((other / "extension.js").read_text(), "// theirs")
+
+    def test_failed_copy_leaves_the_extension_that_was_there(self):
+        failing = ('cp() { case "$*" in *gnome-shell*) return 1;; esac; '
+                   'command cp "$@"; }; ')
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", "install_service")
+            working = self.files(home / EXTENSIONS / EXTENSION)
+            result = run("install.sh", failing + "install_service")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.files(home / EXTENSIONS / EXTENSION), working)
+
+    def test_shell_that_does_not_know_it_yet_has_it_switched_on_in_settings(self):
+        with recording_sandbox(enabling_works=False) as (_, run, commands):
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn(
+                "gsettings set org.gnome.shell enabled-extensions "
+                f"['ubuntu-dock@ubuntu.com', '{EXTENSION}']", commands())
+
+    def test_it_is_not_switched_on_twice(self):
+        already = f"['ubuntu-dock@ubuntu.com', '{EXTENSION}']"
+        with recording_sandbox(enabling_works=False, enabled=already) as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertEqual(
+                [c for c in commands() if c.startswith("gsettings set")], [])
+
+    def test_empty_list_of_extensions_is_understood(self):
+        with recording_sandbox(enabling_works=False, enabled="@as []") as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertIn("gsettings set org.gnome.shell enabled-extensions "
+                          f"['{EXTENSION}']", commands())
+
+    def test_list_that_cannot_be_read_is_not_overwritten(self):
+        with recording_sandbox(enabling_works=False, enabled="nonsense(") as (_, run, commands):
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                [c for c in commands() if c.startswith("gsettings set")], [])
+
+    def test_uninstall_switches_it_off_and_removes_it(self):
+        with recording_sandbox() as (home, run, commands):
+            run("install.sh", "install_service")
+            result = run("uninstall.sh", "main_as 1000")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse((home / EXTENSIONS / EXTENSION).exists())
+            self.assertIn(f"gnome-extensions disable {EXTENSION}", commands())
+
+
 class SealTest(unittest.TestCase):
     """The tests above are only safe if a script cannot reach the real system."""
 
     def test_program_that_is_not_allowed_is_not_found(self):
-        for program in ("gsettings", "loginctl", "setfacl", "xinput", "apt"):
+        for program in ("dconf", "loginctl", "setfacl", "xinput", "apt"):
             with self.subTest(program=program):
                 result = call("install.sh", "command", "-v", program)
                 self.assertNotEqual(result.returncode, 0, result.stdout)
 
     def test_real_sudo_systemctl_and_udevadm_are_out_of_reach(self):
-        for program in ("sudo", "systemctl", "udevadm"):
+        for program in ("sudo", "systemctl", "udevadm", "gnome-extensions",
+                        "gsettings"):
             with self.subTest(program=program):
                 result = call("install.sh", "command", "-v", program)
                 self.assertTrue(result.stdout.startswith(str(STUBS)), result.stdout)

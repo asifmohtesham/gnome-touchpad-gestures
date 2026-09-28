@@ -11,6 +11,10 @@ rules_dir="/etc/udev/rules.d"
 # Where the program is installed. The unit names the same place as
 # %h/.local/share/gnome-x11-touchpad-gestures, so the two must change together.
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
+# The part that runs inside GNOME Shell. Without it the gestures still work,
+# but workspaces snap across and glides are held back only in the overview.
+extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+extensions_dir="$HOME/.local/share/gnome-shell/extensions"
 # What this project installed when it was called finger-drag. Left in place,
 # the old service would run beside the new one and every gesture would
 # happen twice, and the old rule would go on granting access after an
@@ -79,20 +83,63 @@ needs_sudo() {
     [ "$status" -eq "$no_access" ]
 }
 
-install_program() {
-    local package="gnome_x11_touchpad_gestures"
-    local fresh="$program_dir/$package.new" old="$program_dir/$package.old"
+# Copies the files given into a directory, replacing what was there.
+#
+# The new copy is built beside the old one and swapped in only once it is
+# complete, so a copy that fails leaves what worked where it was. It is
+# replaced whole, so a file removed from the repository does not linger.
+put_in_place() {
+    local target="$1"
+    shift
+    local fresh="$target.new" old="$target.old"
     rm -rf "$fresh" "$old"
     mkdir -p "$fresh"
-    cp "$repo/$package"/*.py "$fresh/"
-    # Swapped in only once it is complete, so a copy that fails leaves the
-    # working program where it was. Replaced whole, so a module removed from
-    # the repository does not linger.
-    if [ -e "$program_dir/$package" ] || [ -L "$program_dir/$package" ]; then
-        mv "$program_dir/$package" "$old"
+    cp "$@" "$fresh/"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        mv "$target" "$old"
     fi
-    mv "$fresh" "$program_dir/$package"
+    mv "$fresh" "$target"
     rm -rf "$old"
+}
+
+install_program() {
+    local package="gnome_x11_touchpad_gestures"
+    put_in_place "$program_dir/$package" "$repo/$package"/*.py
+}
+
+# Prints the list of enabled extensions with ours added, or nothing if it is
+# there already or the list cannot be understood. A list that cannot be read
+# is never written over.
+with_extension_enabled() {
+    python3 - "$extension" "$1" <<'PYTHON'
+import ast
+import sys
+
+uuid, listed = sys.argv[1], sys.argv[2].strip()
+if listed.startswith("@as "):
+    listed = listed[4:]
+try:
+    enabled = ast.literal_eval(listed)
+except (SyntaxError, ValueError):
+    sys.exit(0)
+if isinstance(enabled, list) and uuid not in enabled:
+    print(enabled + [uuid])
+PYTHON
+}
+
+install_extension() {
+    put_in_place "$extensions_dir/$extension" "$repo/extension/$extension"/*
+    # A shell that has not seen the extension yet cannot be asked to switch
+    # it on. It is then switched on in the settings, which the shell reads
+    # when it next starts.
+    if ! gnome-extensions enable "$extension" 2>/dev/null; then
+        local enabled
+        enabled="$(with_extension_enabled \
+            "$(gsettings get org.gnome.shell enabled-extensions)")"
+        if [ -n "$enabled" ]; then
+            gsettings set org.gnome.shell enabled-extensions "$enabled"
+        fi
+    fi
 }
 
 remove_former_service() {
@@ -107,6 +154,7 @@ remove_former_service() {
 install_service() {
     remove_former_service
     install_program
+    install_extension
     mkdir -p "$unit_dir"
     install -m 0644 "$here/$unit" "$unit_dir/$unit"
     systemctl --user daemon-reload
@@ -172,6 +220,10 @@ main_as() {
     echo "Installed to $program_dir."
     echo "The service runs that copy, so this directory can be moved or removed."
     echo "After changing the code here, run this script again to install it."
+    echo
+    echo "The shell extension is loaded when GNOME Shell starts. If it is new or"
+    echo "has changed, restart the shell: press Alt+F2, type r, press Enter."
+    echo "Your windows stay open. Until then workspaces snap across as before."
 }
 
 main() {

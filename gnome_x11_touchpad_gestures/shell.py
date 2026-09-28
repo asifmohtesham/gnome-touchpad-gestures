@@ -153,6 +153,15 @@ class Shell:
             # stops hearing about back where it was.
             pass
 
+    def extension_version(self) -> str | None:
+        """The version of the extension the shell has loaded, if it has one."""
+        try:
+            return str(self._connected().call_blocking(
+                BUS_NAME, EXTENSION_PATH, PROPERTIES, "Get", "ss",
+                (EXTENSION_INTERFACE, "Version"), timeout=OVERVIEW_TIMEOUT_S))
+        except Exception:
+            return None
+
     def pointer_over_window(self) -> bool | None:
         """Whether the pointer is over a window. None if nobody can say."""
         answer = self._ask("PointerOverWindow")

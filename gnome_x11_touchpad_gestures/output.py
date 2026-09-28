@@ -6,7 +6,8 @@ import time
 from evdev import ecodes as e
 
 from gnome_x11_touchpad_gestures.gestures import (
-    Action, ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
+    SWIPE_FULL_MM, Action, ButtonDown, ButtonUp, Direction, Move, Overview, Snap,
+    SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
 from gnome_x11_touchpad_gestures.momentum import Scroll
 
 WORKSPACE_KEYS = (e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_LEFT, e.KEY_RIGHT)
@@ -28,6 +29,8 @@ class Output:
         self._rest_y = 0.0
         self._glide_steps = 0
         self._held_back = False
+        self._following = False   # the shell is moving the workspace itself
+        self._snap = Snap()
         self._forget_scroll()
 
     def emit(self, actions: list[Action | Scroll]) -> None:
@@ -42,6 +45,8 @@ class Output:
                 self._button(0)
             elif isinstance(action, SwitchWorkspace):
                 self._chord(_ARROW[action.direction])
+            elif isinstance(action, (SwipeBegin, SwipeMove, SwipeEnd, SwipeCancel)):
+                self._swipe(action)
             elif isinstance(action, Overview):
                 self._shell.show_overview(action.show)
 
@@ -52,6 +57,7 @@ class Output:
         self._keyboard.syn()
         self._rest_x = self._rest_y = 0.0
         self._forget_scroll()
+        self._swipe(SwipeCancel())
 
     def _forget_scroll(self) -> None:
         # Per axis: the fraction of a unit not yet sent, and the units sent
@@ -65,12 +71,13 @@ class Output:
             self._forget_scroll()
             self._glide_steps = 0
             self._held_back = False
-        # In the overview every notch of a wheel moves one workspace along,
-        # so a glide would race through them. It is asked about now and then
-        # because the overview can open while a glide runs, and a glide once
-        # held back stays so: resuming it somewhere else would be a surprise.
+        # Over what the shell draws itself a notch of the wheel steps through
+        # something, workspaces or the volume, so a glide would race through
+        # it. It is asked about now and then because the overview can open,
+        # or a mouse move the pointer, while a glide runs. A glide once held
+        # back stays so: resuming it somewhere else would be a surprise.
         if not self._held_back and self._glide_steps % GLIDE_CHECK_STEPS == 0:
-            self._held_back = self._shell.overview_is_open()
+            self._held_back = not self._shell.may_glide()
         self._glide_steps += 1
         if self._held_back:
             return
@@ -93,6 +100,27 @@ class Output:
             self._notch_rest[notch_code] -= notches * WHEEL_NOTCH
             self._wheel.write(e.EV_REL, notch_code, notches)
         return True
+
+    def _swipe(self, action) -> None:
+        """A sideways swipe, for a shell that follows the fingers or one that cannot."""
+        if isinstance(action, SwipeBegin):
+            # Asked at every swipe: the extension may have been installed,
+            # or the shell restarted, since the last one.
+            self._following = self._shell.swipe_begin(action.t)
+        if not self._following:
+            for switch in self._snap.feed(action):
+                self._chord(_ARROW[switch.direction])
+            return
+        if isinstance(action, SwipeMove):
+            # The page follows the fingers, so moving them left is moving
+            # on towards the next workspace.
+            self._shell.swipe_update(action.t, -action.dx / SWIPE_FULL_MM)
+        elif isinstance(action, SwipeEnd):
+            self._following = False
+            self._shell.swipe_end(action.t)
+        elif isinstance(action, SwipeCancel):
+            self._following = False
+            self._shell.swipe_cancel()
 
     def _button(self, value: int) -> None:
         self._pointer.write(e.EV_KEY, e.BTN_LEFT, value)

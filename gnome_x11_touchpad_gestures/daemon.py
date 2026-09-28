@@ -184,7 +184,22 @@ def run(device, tracker, machine, output, clock=time.monotonic) -> None:
 
 def glides(shell) -> MomentumMachine:
     """Momentum that holds off wherever a wheel steps instead of scrolling."""
-    return MomentumMachine(may_glide=lambda: not shell.overview_is_open())
+    return MomentumMachine(may_glide=shell.may_glide)
+
+
+RESTART_THE_SHELL = "press Alt+F2, type r, press Enter"
+
+
+def extension_state(loaded: str | None) -> str:
+    """What to tell someone about the shell extension. It is never required."""
+    if loaded is None:
+        return ("not answering, so workspaces snap across and glides are held "
+                "back only in the overview. If it is installed, restart the "
+                f"shell to load it: {RESTART_THE_SHELL}")
+    if loaded != __version__:
+        return (f"answering, but the shell still runs version {loaded} and "
+                f"this is {__version__}. Restart the shell: {RESTART_THE_SHELL}")
+    return f"answering, version {loaded}"
 
 
 def check() -> int:
@@ -197,6 +212,7 @@ def check() -> int:
         print(NO_UINPUT, file=sys.stderr)
         return EXIT_NO_ACCESS
     print(f"uinput: {UINPUT_PATH} writable")
+    print(f"extension: {extension_state(Shell().extension_version())}")
     return 0
 
 
