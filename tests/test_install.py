@@ -68,7 +68,7 @@ FAKE_NODE = "/dev/input/event9"
 
 @contextlib.contextmanager
 def recording_sandbox(status_exit=0, enabling_works=True,
-                      enabled="['ubuntu-dock@ubuntu.com']"):
+                      enabled="['ubuntu-dock@ubuntu.com']", disabled="@as []"):
     """An empty home where system commands succeed and are written to a log.
 
     Yields the home, a function that sources a script and runs a snippet of
@@ -86,7 +86,10 @@ def recording_sandbox(status_exit=0, enabling_works=True,
             "gnome-extensions": (f'echo "gnome-extensions $*" >> "{log}"\n'
                                  f'exit {0 if enabling_works else 1}\n'),
             "gsettings": (f'echo "gsettings $*" >> "{log}"\n'
-                          f'case "$1" in get) echo "{enabled}";; esac\n'),
+                          f'case "$1 $3" in\n'
+                          f'  "get enabled-extensions") echo "{enabled}";;\n'
+                          f'  "get disabled-extensions") echo "{disabled}";;\n'
+                          f'esac\n'),
             "udevadm": (f'echo "udevadm $*" >> "{log}"\n'
                         f'case "$*" in\n'
                         f'  *--dry-run*) echo "{FAKE_SYSFS}";;\n'
@@ -345,15 +348,136 @@ class ExtensionIsInstalledTest(unittest.TestCase):
             run("install.sh", "install_service")
             self.assertEqual((other / "extension.js").read_text(), "// theirs")
 
+    # Copying the extension, and nothing else, fails.
+    FAILING_COPY = ('cp() { case "$*" in *@asifmohtesham*) return 1;; esac; '
+                    'command cp "$@"; }; ')
+    # The new copy is ready and cannot be moved to where it goes.
+    FAILING_SWAP = ('mv() { case "$1" in *.new) return 1;; esac; '
+                    'command mv "$@"; }; ')
+
+    def settings_written(self, commands):
+        return [c for c in commands() if c.startswith("gsettings set")]
+
+    @contextlib.contextmanager
+    def copy_of_the_repository(self):
+        """Somewhere to leave things lying about without touching the real one."""
+        with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as copy:
+            for part in ("extension", PACKAGE):
+                shutil.copytree(REPO / part, pathlib.Path(copy) / part,
+                                ignore=shutil.ignore_patterns("__pycache__"))
+            yield pathlib.Path(copy)
+
     def test_failed_copy_leaves_the_extension_that_was_there(self):
-        failing = ('cp() { case "$*" in *gnome-shell*) return 1;; esac; '
-                   'command cp "$@"; }; ')
         with recording_sandbox() as (home, run, _):
             run("install.sh", "install_service")
             working = self.files(home / EXTENSIONS / EXTENSION)
-            result = run("install.sh", failing + "install_service")
+            result = run("install.sh", self.FAILING_COPY + "install_service")
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(self.files(home / EXTENSIONS / EXTENSION), working)
+
+    def test_failed_copy_leaves_nothing_for_the_shell_to_trip_on(self):
+        # The shell takes every directory among the extensions for one.
+        with recording_sandbox() as (home, run, _):
+            result = run("install.sh", self.FAILING_COPY + "install_service")
+            self.assertNotEqual(result.returncode, 0)
+            among = home / EXTENSIONS
+            self.assertEqual(
+                sorted(p.name for p in among.iterdir()) if among.exists() else [], [])
+
+    def test_failed_copy_over_a_working_extension_leaves_only_that(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", "install_service")
+            run("install.sh", self.FAILING_COPY + "install_service")
+            self.assertEqual(
+                sorted(p.name for p in (home / EXTENSIONS).iterdir()), [EXTENSION])
+
+    def test_copy_that_cannot_be_moved_into_place_leaves_the_old_one(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", "install_service")
+            working = self.files(home / EXTENSIONS / EXTENSION)
+            result = run("install.sh", self.FAILING_SWAP + "install_extension")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.files(home / EXTENSIONS / EXTENSION), working)
+            self.assertEqual(
+                sorted(p.name for p in (home / EXTENSIONS).iterdir()), [EXTENSION])
+            self.assertEqual(
+                [p for p in home.rglob("*") if p.suffix in (".new", ".old")], [])
+
+    def test_what_a_failed_install_left_behind_is_not_installed(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", self.FAILING_COPY + "install_service")
+            for left in home.rglob("*.new"):
+                (left / "stale.js").write_text("// from a copy that failed")
+            leftover = home / PROGRAM / "extension.new"
+            leftover.mkdir(parents=True, exist_ok=True)
+            (leftover / "stale.js").write_text("// from a copy that failed")
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sorted(self.files(home / EXTENSIONS / EXTENSION)),
+                ["extension.js", "gestures.js", "metadata.json"])
+
+    def test_only_the_extension_s_own_files_are_installed(self):
+        with self.copy_of_the_repository() as copy:
+            lying_about = copy / "extension" / EXTENSION
+            (lying_about / "extension.js~").write_text("// an editor's backup")
+            (lying_about / "notes.txt").write_text("to do")
+            (lying_about / "scratch").mkdir()
+            (lying_about / "scratch" / "try.js").write_text("// an experiment")
+            with recording_sandbox() as (home, run, _):
+                result = run("install.sh", 'repo="$1"; install_service', str(copy))
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    sorted(p.name for p in (home / EXTENSIONS / EXTENSION).iterdir()),
+                    ["extension.js", "gestures.js", "metadata.json"])
+
+    def test_extension_missing_a_file_is_not_installed(self):
+        with self.copy_of_the_repository() as copy:
+            (copy / "extension" / EXTENSION / "gestures.js").unlink()
+            with recording_sandbox() as (home, run, _):
+                result = run("install.sh", 'repo="$1"; install_service', str(copy))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((home / EXTENSIONS / EXTENSION).exists())
+
+    def test_shell_that_knows_it_switches_it_on_itself(self):
+        with recording_sandbox() as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertIn(f"gnome-extensions enable {EXTENSION}", commands())
+            self.assertEqual(self.settings_written(commands), [])
+
+    def test_extension_switched_off_before_is_switched_on_again(self):
+        # Switching it off writes it down among those switched off, and
+        # that list wins over the list of those switched on.
+        off = f"['{EXTENSION}', 'someone@else.example']"
+        with recording_sandbox(enabling_works=False, disabled=off) as (_, run, commands):
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.settings_written(commands), [
+                "gsettings set org.gnome.shell enabled-extensions "
+                f"['ubuntu-dock@ubuntu.com', '{EXTENSION}']",
+                "gsettings set org.gnome.shell disabled-extensions "
+                "['someone@else.example']"])
+
+    def test_it_may_be_the_only_one_switched_off(self):
+        off = f"['{EXTENSION}']"
+        with recording_sandbox(enabling_works=False, disabled=off) as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertIn("gsettings set org.gnome.shell disabled-extensions []",
+                          commands())
+
+    def test_others_switched_off_stay_so(self):
+        off = "['someone@else.example']"
+        with recording_sandbox(enabling_works=False, disabled=off) as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertEqual(
+                [c for c in self.settings_written(commands) if "disabled" in c], [])
+
+    def test_list_of_names_that_are_not_names_is_not_overwritten(self):
+        with recording_sandbox(enabling_works=False, enabled="[1, 2]",
+                               disabled="{'a': 1}") as (_, run, commands):
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(self.settings_written(commands), [])
 
     def test_shell_that_does_not_know_it_yet_has_it_switched_on_in_settings(self):
         with recording_sandbox(enabling_works=False) as (_, run, commands):
@@ -390,6 +514,61 @@ class ExtensionIsInstalledTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertFalse((home / EXTENSIONS / EXTENSION).exists())
             self.assertIn(f"gnome-extensions disable {EXTENSION}", commands())
+
+    def uninstalled(self, **settings):
+        with recording_sandbox(**settings) as (_, run, commands):
+            run("install.sh", "install_service")
+            before = len(commands())
+            result = run("uninstall.sh", "main_as 1000")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return [c for c in commands()[before:] if c.startswith("gsettings set")]
+
+    def test_uninstall_leaves_no_trace_of_it_in_the_settings(self):
+        # Switching it off through the shell writes it down among those
+        # switched off, and a shell that has not loaded it cannot be asked.
+        for shell_knows_it in (True, False):
+            with self.subTest(shell_knows_it=shell_knows_it):
+                self.assertEqual(
+                    self.uninstalled(
+                        enabling_works=shell_knows_it,
+                        enabled=f"['ubuntu-dock@ubuntu.com', '{EXTENSION}']",
+                        disabled=f"['{EXTENSION}']"),
+                    ["gsettings set org.gnome.shell enabled-extensions "
+                     "['ubuntu-dock@ubuntu.com']",
+                     "gsettings set org.gnome.shell disabled-extensions []"])
+
+    def test_uninstall_writes_no_settings_that_do_not_name_it(self):
+        self.assertEqual(
+            self.uninstalled(enabled="['ubuntu-dock@ubuntu.com']",
+                             disabled="['someone@else.example']"), [])
+
+    def test_uninstall_does_not_overwrite_a_list_it_cannot_read(self):
+        self.assertEqual(
+            self.uninstalled(enabling_works=False, enabled="nonsense(",
+                             disabled="nonsense("), [])
+
+    def test_uninstall_does_not_overwrite_a_list_of_more_than_names(self):
+        self.assertEqual(
+            self.uninstalled(enabling_works=False,
+                             enabled=f"[1, '{EXTENSION}']",
+                             disabled=f"[('a', 'b'), '{EXTENSION}']"), [])
+
+    def test_uninstall_asks_the_shell_before_it_edits_the_settings(self):
+        # The shell switches it off at once; the settings are what is left.
+        with recording_sandbox(
+                enabled=f"['{EXTENSION}']") as (_, run, commands):
+            run("uninstall.sh", "main_as 1000")
+            said = commands()
+            self.assertLess(
+                said.index(f"gnome-extensions disable {EXTENSION}"),
+                said.index("gsettings set org.gnome.shell enabled-extensions []"))
+
+    def test_uninstall_leaves_nothing_of_a_failed_install(self):
+        with recording_sandbox() as (home, run, _):
+            run("install.sh", self.FAILING_COPY + "install_service")
+            run("uninstall.sh", "main_as 1000")
+            self.assertEqual(list(home.rglob("*.new")), [])
+            self.assertFalse((home / PROGRAM).exists())
 
 
 class SealTest(unittest.TestCase):

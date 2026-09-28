@@ -85,60 +85,85 @@ needs_sudo() {
 
 # Copies the files given into a directory, replacing what was there.
 #
-# The new copy is built beside the old one and swapped in only once it is
+# The first argument is where they go, the second where the work is done:
+# the new copy is built as <second>.new and swapped in only once it is
 # complete, so a copy that fails leaves what worked where it was. It is
 # replaced whole, so a file removed from the repository does not linger.
 put_in_place() {
-    local target="$1"
-    shift
-    local fresh="$target.new" old="$target.old"
+    local target="$1" beside="$2"
+    shift 2
+    local fresh="$beside.new" old="$beside.old"
     rm -rf "$fresh" "$old"
-    mkdir -p "$fresh"
+    mkdir -p "$fresh" "$(dirname "$target")"
     cp "$@" "$fresh/"
     if [ -e "$target" ] || [ -L "$target" ]; then
         mv "$target" "$old"
     fi
-    mv "$fresh" "$target"
+    if ! mv "$fresh" "$target"; then
+        if [ -e "$old" ] || [ -L "$old" ]; then
+            mv "$old" "$target"
+        fi
+        rm -rf "$fresh"
+        return 1
+    fi
     rm -rf "$old"
 }
 
 install_program() {
     local package="gnome_x11_touchpad_gestures"
-    put_in_place "$program_dir/$package" "$repo/$package"/*.py
+    put_in_place "$program_dir/$package" "$program_dir/$package" \
+        "$repo/$package"/*.py
 }
 
-# Prints the list of enabled extensions with ours added, or nothing if it is
-# there already or the list cannot be understood. A list that cannot be read
-# is never written over.
-with_extension_enabled() {
-    python3 - "$extension" "$1" <<'PYTHON'
+# Prints a list of extensions with ours put in ("with") or taken out
+# ("without"), or nothing if that changes nothing or the list cannot be
+# understood. A list that cannot be read is never written over.
+edited_list() {
+    python3 - "$extension" "$1" "$2" <<'PYTHON'
 import ast
 import sys
 
-uuid, listed = sys.argv[1], sys.argv[2].strip()
+uuid, change, listed = sys.argv[1], sys.argv[2], sys.argv[3].strip()
 if listed.startswith("@as "):
     listed = listed[4:]
 try:
-    enabled = ast.literal_eval(listed)
+    names = ast.literal_eval(listed)
 except (SyntaxError, ValueError):
     sys.exit(0)
-if isinstance(enabled, list) and uuid not in enabled:
-    print(enabled + [uuid])
+if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+    sys.exit(0)
+wanted = [name for name in names if name != uuid]
+if change == "with":
+    wanted = names if uuid in names else names + [uuid]
+if wanted != names:
+    print(wanted)
 PYTHON
 }
 
+# Puts the extension in, or takes it out of, one of the shell's two lists.
+list_extension() {
+    local key="$1" change="$2" edited
+    edited="$(edited_list "$change" "$(gsettings get org.gnome.shell "$key")")"
+    if [ -n "$edited" ]; then
+        gsettings set org.gnome.shell "$key" "$edited"
+    fi
+}
+
 install_extension() {
-    put_in_place "$extensions_dir/$extension" "$repo/extension/$extension"/*
+    # Named one by one: whatever else lies in that directory, an editor's
+    # backup or a note, is no part of the extension. The copy is made ready
+    # beside the program, not among the extensions, where the shell would
+    # take what a failed copy left behind for an extension.
+    local from="$repo/extension/$extension"
+    put_in_place "$extensions_dir/$extension" "$program_dir/extension" \
+        "$from/extension.js" "$from/gestures.js" "$from/metadata.json"
     # A shell that has not seen the extension yet cannot be asked to switch
     # it on. It is then switched on in the settings, which the shell reads
-    # when it next starts.
+    # when it next starts. Switching it off had the shell write it down
+    # among those switched off, and that list is the one that wins.
     if ! gnome-extensions enable "$extension" 2>/dev/null; then
-        local enabled
-        enabled="$(with_extension_enabled \
-            "$(gsettings get org.gnome.shell enabled-extensions)")"
-        if [ -n "$enabled" ]; then
-            gsettings set org.gnome.shell enabled-extensions "$enabled"
-        fi
+        list_extension enabled-extensions with
+        list_extension disabled-extensions without
     fi
 }
 
