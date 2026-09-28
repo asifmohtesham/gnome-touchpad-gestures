@@ -513,6 +513,39 @@ class RepeatedFlicksTest(unittest.TestCase):
         speeds, _ = self.flicks(1, start=t + 0.1)
         self.assertSpeeds(speeds, [1.0])
 
+    def test_fingers_left_resting_on_the_pad_end_the_run(self):
+        # Stop the page with two fingers, read for five seconds with them
+        # still down, then flick on: that is a fresh start, not a repeat.
+        _, t = self.flicks(2)
+        self.machine.update(t, 2, 50.0, 25.0)
+        self.machine.update(t + 0.01, 2, 50.0, 25.0)
+        speeds, _ = self.flicks(1, start=t + 5.0)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_long_scroll_that_ends_in_a_flick_is_not_a_repeat(self):
+        _, t = self.flicks(2)
+        end, _ = scroll(self.machine, 0.0, 200.0, start=t,
+                        frames=int(2 * m.FLICK_TOUCH_S / STEP))
+        self.machine.update(end + STEP, 0, 0.0, 0.0)
+        self.assertSpeeds([self.starting_speed()], [1.0])
+
+    def test_pad_reporting_no_fingers_again_does_not_end_the_run(self):
+        lifted = flick(self.machine, 0.0, 200.0)
+        self.machine.update(lifted + 0.004, 0, 0.0, 0.0)
+        self.machine.update(lifted + 0.008, 0, 0.0, 0.0)
+        self.assertIsNotNone(self.machine.next_deadline())
+        speeds, _ = self.flicks(1, start=lifted + 0.25)
+        self.assertSpeeds(speeds, [1.0 + m.FLICK_BOOST_STEP])
+
+    def test_sideways_flick_the_other_way_starts_again(self):
+        _, t = self.flicks(3, vx=200.0, vy=0.0)
+        speeds, _ = self.flicks(1, vx=-200.0, vy=0.0, start=t)
+        self.assertSpeeds(speeds, [1.0])
+
+    def test_sideways_repeats_build_up(self):
+        speeds, _ = self.flicks(2, vx=200.0, vy=0.0)
+        self.assertSpeeds(speeds, [-1.0, -(1.0 + m.FLICK_BOOST_STEP)])
+
     def test_boost_is_applied_after_the_cap_on_finger_speed(self):
         speeds, _ = self.flicks(2, vy=5000.0)
         capped = m.GLIDE_MAX_MM_S * m.SCROLL_UNITS_PER_MM
@@ -521,7 +554,60 @@ class RepeatedFlicksTest(unittest.TestCase):
                                delta=0.01 * capped)
 
 
+class MayGlideTest(unittest.TestCase):
+    """Something outside the machine may forbid a glide, as the overview does."""
+
+    def setUp(self):
+        self.allowed = True
+        self.asked = 0
+        self.machine = MomentumMachine(may_glide=self.may_glide)
+
+    def may_glide(self):
+        self.asked += 1
+        return self.allowed
+
+    def test_forbidden_flick_does_not_glide(self):
+        self.allowed = False
+        flick(self.machine, 0.0, 200.0)
+        self.assertIsNone(self.machine.next_deadline())
+        self.assertEqual(self.machine.tick(10.0), [])
+
+    def test_allowed_flick_glides(self):
+        flick(self.machine, 0.0, 200.0)
+        self.assertIsNotNone(self.machine.next_deadline())
+
+    def test_question_is_put_only_when_a_glide_would_start(self):
+        flick(self.machine, 0.0, m.GLIDE_MIN_MM_S / 2)
+        scroll(self.machine, 0.0, 200.0, start=1.0, count=3)
+        self.machine.update(2.0, 0, 0.0, 0.0)
+        self.assertEqual(self.asked, 0)
+        flick(self.machine, 0.0, 200.0, start=3.0)
+        self.assertEqual(self.asked, 1)
+
+    def test_forbidden_flicks_do_not_build_up_speed(self):
+        self.allowed = False
+        t = 0.0
+        for _ in range(3):
+            t = flick(self.machine, 0.0, 200.0, start=t) + 0.25
+        self.allowed = True
+        flick(self.machine, 0.0, 200.0, start=t)
+        (step,) = self.machine.tick(self.machine.next_deadline())
+        normal = 200.0 * m.SCROLL_UNITS_PER_MM
+        speed = step.dy / (m.GLIDE_FRAME_S * m.glide_speed(m.GLIDE_FRAME_S))
+        self.assertAlmostEqual(speed, normal, delta=0.01 * normal)
+
+    def test_machine_made_without_a_say_so_glides(self):
+        machine = MomentumMachine()
+        flick(machine, 0.0, 200.0)
+        self.assertIsNotNone(machine.next_deadline())
+
+
 class FlickBoostTest(unittest.TestCase):
+    def test_boost_is_never_below_normal(self):
+        for streak in (0, -1, -3, -100):
+            with self.subTest(streak=streak):
+                self.assertEqual(m.flick_boost(streak), 1.0)
+
     def test_first_flick_is_not_boosted(self):
         self.assertEqual(m.flick_boost(1), 1.0)
 

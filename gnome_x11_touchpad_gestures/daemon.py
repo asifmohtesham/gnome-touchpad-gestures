@@ -181,6 +181,11 @@ def run(device, tracker, machine, output, clock=time.monotonic) -> None:
             output.emit(machine.tick(clock()))
 
 
+def glides(shell) -> MomentumMachine:
+    """Momentum that holds off wherever a wheel steps instead of scrolling."""
+    return MomentumMachine(may_glide=lambda: not shell.overview_is_open())
+
+
 def check() -> int:
     device = find_touchpad()
     if device is None:
@@ -240,14 +245,15 @@ def main(argv=None) -> int:
                         e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
              e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
             WHEEL_NAME)
-        output = Output(pointer, keyboard, wheel, Shell())
+        shell = Shell()
+        output = Output(pointer, keyboard, wheel, shell)
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
         print(f"gnome-x11-touchpad-gestures: listening on {device.path} ({device.name})",
               flush=True)
         try:
             run(device, make_tracker(device),
-                Machines(GestureMachine(), MomentumMachine()), output)
+                Machines(GestureMachine(), glides(shell)), output)
         except KeyboardInterrupt:
             pass
     return 0

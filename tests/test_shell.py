@@ -4,7 +4,8 @@ import unittest
 
 import dbus
 
-from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S, Shell
+from gnome_x11_touchpad_gestures.shell import (
+    OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
 
 
 class FakeBus:
@@ -33,7 +34,8 @@ class ShellTest(unittest.TestCase):
         self.bus = FakeBus()
         self.connections = 0
         self.connect_error = None
-        self.shell = Shell(connect=self.connect)
+        self.now = 100.0
+        self.shell = Shell(connect=self.connect, clock=lambda: self.now)
 
     def connect(self):
         self.connections += 1
@@ -121,17 +123,49 @@ class ShellTest(unittest.TestCase):
     def test_failing_question_is_reported_once_not_at_every_glide(self):
         self.bus.error = RuntimeError("no such name")
         self.asking()
-        self.assertEqual(self.asking(), (False, ""))
-        self.assertEqual(self.asking(), (False, ""))
+        for _ in range(2):
+            self.now += SHELL_RETRY_S
+            self.assertEqual(self.asking(), (False, ""))
 
     def test_failure_is_reported_again_after_the_shell_has_answered(self):
         self.bus.error = RuntimeError("no such name")
         self.asking()
         self.bus.error = None
         self.bus.answer = dbus.Boolean(False)
+        self.now += SHELL_RETRY_S
         self.asking()
         self.bus.error = RuntimeError("gone again")
         self.assertIn("gone again", self.asking()[1])
+
+    def test_shell_that_did_not_answer_is_left_alone_for_a_while(self):
+        self.bus.error = RuntimeError("timed out")
+        self.asking()
+        asked = len(self.bus.calls)
+        for later in (0.1, 0.2, 1.0, SHELL_RETRY_S - 0.1):
+            self.now = 100.0 + later
+            self.assertEqual(self.asking(), (False, ""))
+        self.assertEqual(len(self.bus.calls), asked)
+
+    def test_shell_is_asked_again_after_that_while(self):
+        self.bus.error = RuntimeError("timed out")
+        self.asking()
+        self.bus.error = None
+        self.bus.answer = dbus.Boolean(True)
+        self.now = 100.0 + SHELL_RETRY_S
+        self.assertEqual(self.asking(), (True, ""))
+
+    def test_shell_that_answers_is_asked_every_time(self):
+        self.bus.answer = dbus.Boolean(False)
+        for _ in range(4):
+            self.asking()
+        self.assertEqual(len(self.bus.calls), 4)
+
+    def test_request_to_open_the_overview_is_always_tried(self):
+        self.bus.error = RuntimeError("timed out")
+        self.asking()
+        asked = len(self.bus.calls)
+        self.quietly(True)
+        self.assertEqual(len(self.bus.calls), asked + 1)
 
     def test_failed_connection_is_reported_and_tried_again(self):
         self.connect_error = RuntimeError("no session bus")

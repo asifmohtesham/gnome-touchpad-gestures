@@ -68,8 +68,11 @@ class DeviceNameTest(unittest.TestCase):
     turns every glide round.
     """
 
-    CLAIMED = ("touchpad", "touchscreen", "trackpoint", "eraser", "cursor",
-               " pad", "wacom", "pen")
+    # mutter 46, src/backends/x11/meta-seat-x11.c, create_device().
+    MUTTER = ("eraser", "cursor", " pad", "wacom", "pen", "touchpad")
+    # GDK, which GTK programs use to sort devices in their turn.
+    GDK = ("stylus", "trackpoint", "dualpoint stick")
+    CLAIMED = MUTTER + GDK + ("touchscreen",)
     NAMES = (daemon.POINTER_NAME, daemon.KEYBOARD_NAME, daemon.WHEEL_NAME)
 
     def test_no_name_would_be_taken_for_another_kind_of_device(self):
@@ -86,6 +89,33 @@ class DeviceNameTest(unittest.TestCase):
     def test_names_say_what_made_them(self):
         for name in self.NAMES:
             self.assertTrue(name.startswith("gnome-x11-gestures "), name)
+
+
+class GlidesTest(unittest.TestCase):
+    """The momentum machine the daemon runs asks the shell before gliding."""
+
+    class Shell:
+        overview_open = False
+
+        def overview_is_open(self):
+            return self.overview_open
+
+    def flick(self, machine):
+        for i in range(12):
+            machine.update(i * 0.007, 2, 50.0, 25.0 + 1.4 * i)
+        machine.update(12 * 0.007, 0, 0.0, 0.0)
+
+    def test_flick_outside_the_overview_glides(self):
+        machine = daemon.glides(self.Shell())
+        self.flick(machine)
+        self.assertIsNotNone(machine.next_deadline())
+
+    def test_flick_in_the_overview_never_starts_a_glide(self):
+        shell = self.Shell()
+        shell.overview_open = True
+        machine = daemon.glides(shell)
+        self.flick(machine)
+        self.assertIsNone(machine.next_deadline())
 
 
 class PreferenceTest(unittest.TestCase):
@@ -126,6 +156,8 @@ class FakeInputDevice:
     opened = []
 
     def __init__(self, path):
+        if FakeInputDevice.devices[path] is None:
+            raise OSError(13, f"cannot open {path}")
         abs_codes, props, keys, bustype = FakeInputDevice.devices[path]
         self.path = path
         self.name = f"fake {path}"
@@ -184,6 +216,16 @@ class FindTouchpadTest(unittest.TestCase):
         daemon.find_touchpad()
         self.assertEqual(self.left_open(), ["/dev/input/event8"])
 
+    def test_device_that_cannot_be_opened_does_not_stop_the_search(self):
+        self.having(event3=None, event8=MULTITOUCH + (BUS_I2C,), event9=None)
+        self.assertEqual(daemon.find_touchpad().path, "/dev/input/event8")
+
+    def test_daemon_refuses_to_start_on_a_pad_that_cannot_tell_fingers_apart(self):
+        self.having(event8=SINGLE_TOUCH + (BUS_I8042,))
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(daemon.main([]), daemon.EXIT_UNSUPPORTED)
+        self.assertIn("each finger", stderr.getvalue())
+
     def test_nothing_is_found_among_other_devices(self):
         self.having(event3=KEYBOARD + (BUS_I8042,))
         self.assertIsNone(daemon.find_touchpad())
@@ -216,6 +258,21 @@ class SingleTouchPadTest(unittest.TestCase):
         abs_codes, props, keys = MULTITOUCH
         self.assertFalse(is_single_touch_pad(
             {e.EV_ABS: abs_codes, e.EV_KEY: keys}, props))
+
+    def is_one(self, abs_codes, props, keys):
+        return is_single_touch_pad({e.EV_ABS: abs_codes, e.EV_KEY: keys}, props)
+
+    def test_it_must_be_a_pointing_device(self):
+        self.assertFalse(self.is_one([e.ABS_X, e.ABS_Y], [e.INPUT_PROP_DIRECT], PAD_KEYS))
+        self.assertFalse(self.is_one([e.ABS_X, e.ABS_Y], [], PAD_KEYS))
+
+    def test_it_must_report_a_position(self):
+        self.assertFalse(self.is_one([], [e.INPUT_PROP_POINTER], PAD_KEYS))
+
+    def test_it_must_be_touched_with_a_finger(self):
+        # A drawing tablet reports a position and points, but with a pen.
+        self.assertFalse(self.is_one(
+            [e.ABS_X, e.ABS_Y], [e.INPUT_PROP_POINTER], [e.BTN_TOOL_PEN, e.BTN_TOUCH]))
 
     def test_mouse_is_not(self):
         self.assertFalse(is_single_touch_pad(
