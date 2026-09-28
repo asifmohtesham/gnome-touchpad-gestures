@@ -257,6 +257,26 @@ class MainTest(unittest.TestCase):
             daemon.main([])
         self.assertIn(gnome_x11_touchpad_gestures.__version__, stdout.getvalue())
 
+    def times_given_to_the_loop(self, kernel_agrees):
+        touchpad = FakeTouchpad([interrupt])
+        with mock.patch.object(daemon, "stamp_by_our_clock",
+                               return_value=kernel_agrees) as asked, \
+                mock.patch.object(daemon, "run",
+                                  side_effect=KeyboardInterrupt) as loop:
+            self.assertEqual(self.run_main(touchpad), 0)
+        asked.assert_called_once_with(touchpad)
+        return loop.call_args.kwargs["times"]
+
+    def test_frames_bear_the_kernel_s_times_where_it_gives_them(self):
+        class Report:
+            type, code, value = e.EV_SYN, e.SYN_REPORT, 0
+
+            def timestamp(self):
+                return 9.99
+
+        self.assertEqual(self.times_given_to_the_loop(True).of(Report(), 10.0), 9.99)
+        self.assertEqual(self.times_given_to_the_loop(False).of(Report(), 10.0), 10.0)
+
     def run_main(self, touchpad):
         if touchpad is not None:
             # A test that goes wrong must fail, not leave the daemon waiting.

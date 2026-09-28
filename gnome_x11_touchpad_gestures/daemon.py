@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import fcntl
 import os
 import select
 import signal
+import struct
 import sys
 import time
 
@@ -16,7 +18,7 @@ from gnome_x11_touchpad_gestures import __version__
 from gnome_x11_touchpad_gestures.gestures import GestureMachine
 from gnome_x11_touchpad_gestures.momentum import MomentumMachine
 from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS, Output
-from gnome_x11_touchpad_gestures.shell import Shell
+from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S, Shell
 from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
@@ -35,6 +37,12 @@ EXIT_NO_ACCESS = 3
 EXIT_UNSUPPORTED = 4
 # A touchpad plugged in or paired later arrives on one of these buses.
 EXTERNAL_BUSES = (0x03, 0x05)  # USB, Bluetooth
+# Sets the clock the kernel stamps this reader's events by. From
+# linux/input.h: _IOW('E', 0xa0, int).
+EVIOCSCLOCKID = 0x400445A0
+# A frame said to be older than this when it is read is not believed. What
+# holds the daemon up is the shell, for two timeouts at the very most.
+STAMP_MAX_AGE_S = 4 * OVERVIEW_TIMEOUT_S
 NO_TOUCHPAD = (
     "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
     "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
@@ -149,13 +157,58 @@ def snapshot(device) -> tuple[int, bool]:
             e.BTN_TOUCH in device.active_keys())
 
 
-def pump(events, read_state, tracker, machine, output, now: float) -> None:
+def stamp_by_our_clock(device) -> bool:
+    """Asks the kernel to stamp events by the clock the daemon reads.
+
+    It stamps them by the clock on the wall otherwise, which is another
+    clock and one that is put right now and then. Only this reader of the
+    touchpad is affected. False if the kernel would not.
+    """
+    try:
+        fcntl.ioctl(device.fd, EVIOCSCLOCKID,
+                    struct.pack("i", time.CLOCK_MONOTONIC))
+    except (OSError, AttributeError, TypeError, ValueError):
+        return False
+    return True
+
+
+class FrameTimes:
+    """When each frame happened.
+
+    Frames are read in batches, and after the daemon was held up a batch
+    holds many. Taken to have happened when they were read, they happened
+    all at once, and a swipe was faster than it was. The kernel stamps
+    every event as it happens; that is used where it can be had.
+    """
+
+    def __init__(self, stamped: bool) -> None:
+        self._stamped = stamped
+        self._latest = float("-inf")
+
+    def of(self, event, now: float) -> float:
+        """When the frame that `event` closes happened."""
+        at = now
+        if self._stamped:
+            stamp = event.timestamp()
+            if now - STAMP_MAX_AGE_S <= stamp <= now:
+                at = stamp
+        return self.passed(at)
+
+    def passed(self, t: float) -> float:
+        """Takes note of a time handed to the machines, which never runs back."""
+        self._latest = max(self._latest, t)
+        return self._latest
+
+
+def pump(events, read_state, tracker, machine, output, now: float,
+         times: FrameTimes | None = None) -> None:
+    times = times or FrameTimes(stamped=False)
     for event in events:
         if event.type == e.EV_SYN and event.code == e.SYN_DROPPED:
             # The kernel dropped events, so slot state is stale. End whatever
             # gesture was in progress; fingers must touch again to start one.
             tracker.begin_resync()
-            output.emit(machine.interrupt(now))
+            output.emit(machine.interrupt(times.passed(now)))
             continue
         if tracker.resyncing:
             # The rest of the interrupted packet belongs to slots we can no
@@ -166,20 +219,22 @@ def pump(events, read_state, tracker, machine, output, now: float) -> None:
         frame = tracker.feed(event.type, event.code, event.value)
         if frame is not None:
             output.emit(machine.update(
-                now, frame.count, frame.cx, frame.cy, frame.regrouped,
-                frame.fingers, frame.pressed))
+                times.of(event, now), frame.count, frame.cx, frame.cy,
+                frame.regrouped, frame.fingers, frame.pressed))
 
 
-def run(device, tracker, machine, output, clock=time.monotonic) -> None:
+def run(device, tracker, machine, output, clock=time.monotonic,
+        times: FrameTimes | None = None) -> None:
+    times = times or FrameTimes(stamped=False)
     while True:
         deadline = machine.next_deadline()
         timeout = None if deadline is None else max(0.0, deadline - clock())
         ready, _, _ = select.select([device.fd], [], [], timeout)
         if ready:
             pump(device.read(), lambda: snapshot(device), tracker, machine,
-                 output, clock())
+                 output, clock(), times)
         else:
-            output.emit(machine.tick(clock()))
+            output.emit(machine.tick(times.passed(clock())))
 
 
 def glides(shell) -> MomentumMachine:
@@ -273,7 +328,8 @@ def main(argv=None) -> int:
               f"listening on {device.path} ({device.name})", flush=True)
         try:
             run(device, make_tracker(device),
-                Machines(GestureMachine(), glides(shell)), output)
+                Machines(GestureMachine(), glides(shell)), output,
+                times=FrameTimes(stamped=stamp_by_our_clock(device)))
         except KeyboardInterrupt:
             pass
     return 0
