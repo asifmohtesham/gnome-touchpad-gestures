@@ -18,6 +18,26 @@ class Shell:
     def __init__(self, connect=dbus.SessionBus) -> None:
         self._connect = connect
         self._bus = None
+        self._answering = True   # the last question put to the shell was answered
+
+    def overview_is_open(self) -> bool:
+        """Whether the overview is showing. A shell that cannot say counts as no."""
+        try:
+            if self._bus is None:
+                self._bus = self._connect()
+            answer = self._bus.call_blocking(
+                BUS_NAME, OBJECT_PATH, PROPERTIES, "Get", "ss",
+                (INTERFACE, "OverviewActive"), timeout=OVERVIEW_TIMEOUT_S)
+        except Exception as error:
+            # Asked at every glide, so a desktop without this shell would
+            # fill the log. Said once, and again only if it had recovered.
+            if self._answering:
+                print("gnome-x11-touchpad-gestures: could not ask whether the "
+                      f"overview is open: {error}", file=sys.stderr, flush=True)
+            self._answering = False
+            return False
+        self._answering = True
+        return bool(answer)
 
     def show_overview(self, show: bool) -> None:
         try:

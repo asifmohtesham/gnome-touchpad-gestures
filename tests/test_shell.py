@@ -2,6 +2,8 @@ import contextlib
 import io
 import unittest
 
+import dbus
+
 from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S, Shell
 
 
@@ -9,6 +11,7 @@ class FakeBus:
     def __init__(self):
         self.calls = []
         self.error = None
+        self.answer = None
 
     def call_blocking(self, bus_name, object_path, interface, method,
                       signature, args, timeout=None):
@@ -16,6 +19,7 @@ class FakeBus:
                            signature, tuple(args), timeout))
         if self.error:
             raise self.error
+        return self.answer
 
 
 def request(show):
@@ -84,6 +88,50 @@ class ShellTest(unittest.TestCase):
         self.bus.error = None
         self.assertEqual(self.quietly(True), "")
         self.assertEqual(self.bus.calls, [request(True), request(True)])
+
+    QUESTION = ("org.gnome.Shell", "/org/gnome/Shell",
+                "org.freedesktop.DBus.Properties", "Get", "ss",
+                ("org.gnome.Shell", "OverviewActive"), OVERVIEW_TIMEOUT_S)
+
+    def asking(self):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            answer = self.shell.overview_is_open()
+        return answer, stderr.getvalue()
+
+    def test_overview_open(self):
+        self.bus.answer = dbus.Boolean(True)
+        self.assertEqual(self.asking(), (True, ""))
+        self.assertEqual(self.bus.calls, [self.QUESTION])
+
+    def test_overview_closed(self):
+        self.bus.answer = dbus.Boolean(False)
+        self.assertEqual(self.asking(), (False, ""))
+
+    def test_answer_is_a_plain_truth_value(self):
+        self.bus.answer = dbus.Boolean(True)
+        self.assertIs(self.asking()[0], True)
+
+    def test_shell_that_cannot_be_asked_counts_as_overview_closed(self):
+        self.bus.error = RuntimeError("no such name")
+        answer, message = self.asking()
+        self.assertIs(answer, False)
+        self.assertIn("overview", message)
+        self.assertIn("no such name", message)
+
+    def test_failing_question_is_reported_once_not_at_every_glide(self):
+        self.bus.error = RuntimeError("no such name")
+        self.asking()
+        self.assertEqual(self.asking(), (False, ""))
+        self.assertEqual(self.asking(), (False, ""))
+
+    def test_failure_is_reported_again_after_the_shell_has_answered(self):
+        self.bus.error = RuntimeError("no such name")
+        self.asking()
+        self.bus.error = None
+        self.bus.answer = dbus.Boolean(False)
+        self.asking()
+        self.bus.error = RuntimeError("gone again")
+        self.assertIn("gone again", self.asking()[1])
 
     def test_failed_connection_is_reported_and_tried_again(self):
         self.connect_error = RuntimeError("no session bus")

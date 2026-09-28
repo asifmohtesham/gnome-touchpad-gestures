@@ -319,6 +319,29 @@ instead of delivering it as one jump. Starting speed is capped at
 A glide always runs along the stronger axis only. (The first version let
 nearly diagonal flicks glide on both axes; see below for why that changed.)
 
+### No glide in the overview (added 2026-09-28)
+
+In GNOME's overview a wheel does not scroll, it steps: the shell moves one
+workspace for every discrete notch, at most one each 150 ms
+(`handleWorkspaceScroll` in its `windowManager.js`). A glide delivers about
+68 notches in under two seconds, so it raced through a dozen workspaces.
+
+The momentum machine stays pure and knows nothing of this. The output asks
+the shell whether the overview is open when a glide starts and every
+`GLIDE_CHECK_STEPS` steps (about a tenth of a second) after, since the
+overview can open while a glide runs. If it is open, the rest of that glide
+is dropped, and stays dropped even if the overview closes: a glide that
+resumed somewhere else would be a surprise. The next glide is judged afresh.
+
+The question is the `OverviewActive` property, read with the same timeout
+as it is set with. A shell that cannot answer counts as "not open", so
+glides still work on a desktop without it, and the failure is logged once,
+not at every glide. Reading it takes about half a millisecond.
+
+Not covered: other places where the desktop acts on each notch, such as
+the volume icon in the top bar. Telling those apart needs the window under
+the pointer, which is the skip list considered earlier.
+
 ### Repeated flicks (added 2026-09-28)
 
 The first flick glides at the speed the fingers had. A flick that follows

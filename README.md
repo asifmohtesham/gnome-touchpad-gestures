@@ -18,6 +18,7 @@ pointing, scrolling and tapping are untouched.
 | Two fingers, flick and lift | The page keeps gliding and slows to a stop |
 | Flick again while it glides | The page glides faster, a little more each time |
 | Any touch during a glide | The glide stops at once |
+| Flick inside the overview | No glide. Scrolling there moves between workspaces |
 
 Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
@@ -225,6 +226,11 @@ Run after installing or changing a tunable.
 - For about a third of a second after any touch with three or more fingers,
   a two-finger flick does not glide. A drag still holds its button for that
   long, and the daemon does not tell a drag from a swipe or a tap here.
+- There is no glide while GNOME's overview is open. Every notch of a wheel
+  moves one workspace along there, so a glide would race through them.
+  Scrolling with your fingers on the pad works in the overview as before.
+  Other parts of the desktop that act on each notch, such as the volume
+  icon in the top bar, do still receive glides.
 - Repeated flicks build up speed only while they follow one another: each
   must land while the page still glides, or within a third of a second of
   it stopping, and go the same way. A flick the other way, a pause, a slow
