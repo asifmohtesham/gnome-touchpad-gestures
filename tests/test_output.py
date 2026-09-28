@@ -221,6 +221,14 @@ class OutputTest(unittest.TestCase):
         self.glide(3)
         self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), 120)
 
+    def test_glide_begun_in_the_overview_is_held_back_from_its_first_step(self):
+        # However far through its count the glide before it had got.
+        self.glide(5)
+        self.wheel.events.clear()
+        self.shell.overview_open = True
+        self.glide(GLIDE_CHECK_STEPS)
+        self.assertEqual(self.wheel.events, [])
+
     def test_shell_is_asked_now_and_then_not_at_every_step(self):
         self.glide(GLIDE_CHECK_STEPS * 2 + 1)
         self.assertEqual(self.shell.asked, 3)
@@ -230,7 +238,7 @@ class OutputTest(unittest.TestCase):
         self.glide(GLIDE_CHECK_STEPS * 3)
         self.assertEqual(self.shell.asked, 1)
 
-    def test_held_back_glide_leaves_no_part_notch_behind(self):
+    def test_glide_after_a_held_back_one_starts_from_a_clean_notch(self):
         self.glide(1, units=100.0)
         self.shell.overview_open = True
         self.glide(2, units=100.0)

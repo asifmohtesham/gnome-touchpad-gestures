@@ -241,10 +241,13 @@ The event loop waits on the device with a timeout taken from
 Three virtual devices, so that libinput classifies each one cleanly.
 
 Their names leave out the word "touchpad", although the project's name has
-it. GNOME's window manager sorts input devices by words in their names,
-after lower-casing them: "touchpad", "touchscreen", "trackpoint", "eraser",
-"cursor", " pad", "wacom" and "pen". A device whose name matches gets that
-kind of device's settings, whatever udev says it is. For a short while the
+it. GNOME's window manager sorts input devices by words in their names.
+mutter 46 (`create_device` in `meta-seat-x11.c`) lower-cases the name and
+looks, in this order, for "eraser", "cursor", " pad", "wacom" or "pen", and
+"touchpad". These are plain substrings, so "pen" also matches "open" and
+"suspend". GDK, which GTK programs use, has a list of its own that adds
+"stylus", "trackpoint" and "dualpoint stick". A device whose name matches
+gets that kind of device's settings, whatever udev says it is. For a short while the
 devices carried the project's full name. GNOME then gave the wheel the
 touchpad's natural scrolling, which turned every glide round, and gave the
 pointer the touchpad's speed. A test now keeps those words out of the names.
@@ -319,59 +322,6 @@ instead of delivering it as one jump. Starting speed is capped at
 A glide always runs along the stronger axis only. (The first version let
 nearly diagonal flicks glide on both axes; see below for why that changed.)
 
-### No glide in the overview (added 2026-09-28)
-
-In GNOME's overview a wheel does not scroll, it steps: the shell moves one
-workspace for every discrete notch, at most one each 150 ms
-(`handleWorkspaceScroll` in its `windowManager.js`). A glide delivers about
-68 notches in under two seconds, so it raced through a dozen workspaces.
-
-The momentum machine stays pure and knows nothing of this. The output asks
-the shell whether the overview is open when a glide starts and every
-`GLIDE_CHECK_STEPS` steps (about a tenth of a second) after, since the
-overview can open while a glide runs. If it is open, the rest of that glide
-is dropped, and stays dropped even if the overview closes: a glide that
-resumed somewhere else would be a surprise. The next glide is judged afresh.
-
-The question is the `OverviewActive` property, read with the same timeout
-as it is set with. A shell that cannot answer counts as "not open", so
-glides still work on a desktop without it, and the failure is logged once,
-not at every glide. Reading it takes about half a millisecond.
-
-Not covered: other places where the desktop acts on each notch, such as
-the volume icon in the top bar. Telling those apart needs the window under
-the pointer, which is the skip list considered earlier.
-
-### Repeated flicks (added 2026-09-28)
-
-The first flick glides at the speed the fingers had. A flick that follows
-another glides faster: the `n`-th in a row starts at `flick_boost(n)` times
-that speed, which is `1 + FLICK_BOOST_STEP * (n - 1)`, never more than
-`FLICK_BOOST_MAX`. The climb is a fixed amount per flick, not a doubling, so
-it is gradual.
-
-A flick follows another when both of these hold:
-
-- its touch began while the page still glided, or no more than
-  `FLICK_CHAIN_S` after the glide stopped
-- it goes the same way: same axis, same direction
-
-Anything else starts the count again: a flick the other way or on the other
-axis, a pause, a touch that ends without a flick (a slow scroll, a tap,
-pointing, a drag or a swipe), and `interrupt`.
-
-The boost applies to the glide's starting speed after the cap of
-`GLIDE_MAX_MM_S` on finger speed, so a boosted glide may exceed that cap by
-up to `FLICK_BOOST_MAX` times. A faster start also means a longer glide: for
-a 200 mm/s flick, 1.8 s and 68 notches at normal speed, 2.3 s and 208 notches
-at the ceiling.
-
-| Constant | Initial value | Meaning |
-|---|---|---|
-| `FLICK_BOOST_STEP` | 0.3 | Share of normal speed each repeat adds |
-| `FLICK_BOOST_MAX` | 3.0 | Ceiling, in times normal speed |
-| `FLICK_CHAIN_S` | 0.3 | How long after a glide stops a flick still follows it |
-
 `interrupt(t)` is what the daemon calls on `SYN_DROPPED`. For the gesture
 machine it is the same as every finger lifting. For momentum it is not a
 lift: the glide ends and nothing new may start. If the touch had three or
@@ -423,12 +373,82 @@ A glide runs on one axis because libinput keeps a single scroll direction
 per device: a wheel reporting both axes at once makes it hold events back
 until half a notch has built up, which shows as stutter.
 
+### No glide in the overview (added 2026-09-28)
+
+In GNOME's overview a wheel does not scroll, it steps: the shell moves one
+workspace for every discrete notch, at most one each 150 ms
+(`handleWorkspaceScroll` in its `windowManager.js`). A glide delivers about
+68 notches in under two seconds, so it raced through a dozen workspaces.
+
+The momentum machine stays pure: it is given a function to ask, `may_glide`,
+and puts the question only when a glide is about to start. The daemon hands
+it one that asks the shell. A flick made in the overview therefore never
+becomes a glide, and does not count towards repeated flicks. The output asks
+again every `GLIDE_CHECK_STEPS` steps (about a tenth of a second), since
+the overview can open while a glide runs. If it is open, the rest of that glide
+is dropped, and stays dropped even if the overview closes: a glide that
+resumed somewhere else would be a surprise. The next glide is judged afresh.
+
+The question is the `OverviewActive` property, read with the same timeout
+as it is set with. A shell that cannot answer counts as "not open", so
+glides still work on a desktop without it, and the failure is logged once,
+not at every glide. Reading it takes about half a millisecond.
+
+A shell that does not answer holds the daemon up for the whole timeout, so
+after one unanswered question it is not asked another for `SHELL_RETRY_S`
+(5 s). A request to open or close the overview is always tried.
+
+Not covered: other places where the desktop acts on each notch. In order of
+how likely a flick is to land there: the Ubuntu Dock, whose default scroll
+action switches workspace, about seven in a glide; the volume and
+microphone icons in the top bar; the quick settings sliders; the Activities
+indicator. Telling those apart needs the window under
+the pointer, which is the skip list considered earlier.
+
+### Repeated flicks (added 2026-09-28)
+
+The first flick glides at the speed the fingers had. A flick that follows
+another glides faster: the `n`-th in a row starts at `flick_boost(n)` times
+that speed, which is `1 + FLICK_BOOST_STEP * (n - 1)`, never more than
+`FLICK_BOOST_MAX`. The climb is a fixed amount per flick, not a doubling, so
+it is gradual.
+
+A flick follows another when all of these hold:
+
+- its touch began while the page still glided, or no more than
+  `FLICK_CHAIN_S` after the glide stopped
+- its touch lasted no more than `FLICK_TOUCH_S`. Fingers that stop the page
+  and then rest on the pad, or a long scroll that happens to end in a flick,
+  are not a repeat, however soon after the glide they landed
+- it goes the same way: same axis, same direction
+
+Anything else starts the count again: a flick the other way or on the other
+axis, a pause, a touch that ends without a flick (a slow scroll, a tap,
+pointing, a drag or a swipe), and `interrupt`.
+
+The boost applies to the glide's starting speed after the cap of
+`GLIDE_MAX_MM_S` on finger speed, so a boosted glide may exceed that cap by
+up to `FLICK_BOOST_MAX` times. A faster start also means a longer glide: for
+a 200 mm/s flick, 1.8 s and 68 notches at normal speed, 2.3 s and 208 notches
+at the ceiling.
+
+| Constant | Initial value | Meaning |
+|---|---|---|
+| `FLICK_BOOST_STEP` | 0.3 | Share of normal speed each repeat adds |
+| `FLICK_BOOST_MAX` | 3.0 | Ceiling, in times normal speed |
+| `FLICK_CHAIN_S` | 0.3 | How long after a glide stops a flick still follows it |
+| `FLICK_TOUCH_S` | 0.6 | How long the touch of a repeated flick may last |
+
+`flick_boost` never returns less than 1, whatever it is given. Only the
+lift itself ends a touch: a pad that goes on reporting that nothing touches
+it does not break a run of flicks.
+
 ## Permissions
 
 `install/71-gnome-x11-touchpad-gestures.rules`:
 
 ```
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", TAG+="uaccess"
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
 KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"
 ```
 
@@ -458,6 +478,7 @@ After=graphical-session.target
 [Service]
 ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
 WorkingDirectory=%h/.local/share/gnome-x11-touchpad-gestures
+Environment=PYTHONPATH=%h/.local/share/gnome-x11-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 
@@ -624,6 +645,16 @@ anyway.
 This is the one action that does not go through a virtual device, and the
 one part that works on GNOME only. It uses `python3-dbus`, which is already
 installed.
+
+## Upgrading from the former name (added 2026-09-28)
+
+The project was first published as `finger-drag`, and installed a unit, a
+program directory and a udev rule under that name. Renaming it left those
+behind: the old service would run beside the new one, so that every gesture
+happened twice, and the old rule would go on granting access after an
+uninstall. The installer and the uninstaller therefore remove all three.
+The old rule is a reason to ask for a password even when the new one is
+already in place. This is the only place the former name is still written.
 
 ## Out of scope
 

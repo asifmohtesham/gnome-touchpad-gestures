@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time
 
 import dbus
 
@@ -12,16 +13,23 @@ PROPERTIES = "org.freedesktop.DBus.Properties"
 # The request runs on the daemon's only thread, so a shell that does not
 # answer must not hold up the other gestures for long.
 OVERVIEW_TIMEOUT_S = 0.5
+# A shell that did not answer a question is not asked another for this
+# long. Every unanswered question holds the daemon up for the whole timeout.
+SHELL_RETRY_S = 5.0
 
 
 class Shell:
-    def __init__(self, connect=dbus.SessionBus) -> None:
+    def __init__(self, connect=dbus.SessionBus, clock=time.monotonic) -> None:
         self._connect = connect
+        self._clock = clock
         self._bus = None
+        self._ask_again_at = 0.0
         self._answering = True   # the last question put to the shell was answered
 
     def overview_is_open(self) -> bool:
         """Whether the overview is showing. A shell that cannot say counts as no."""
+        if self._clock() < self._ask_again_at:
+            return False
         try:
             if self._bus is None:
                 self._bus = self._connect()
@@ -35,6 +43,7 @@ class Shell:
                 print("gnome-x11-touchpad-gestures: could not ask whether the "
                       f"overview is open: {error}", file=sys.stderr, flush=True)
             self._answering = False
+            self._ask_again_at = self._clock() + SHELL_RETRY_S
             return False
         self._answering = True
         return bool(answer)

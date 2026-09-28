@@ -22,10 +22,13 @@ pointing, scrolling and tapping are untouched.
 
 Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
 
+Earlier versions were called `finger-drag`. Installing this one removes
+what they installed.
+
 ## Status
 
 A personal project, written with Claude Code and used daily on one laptop.
-It has a test suite and has been through three independent code reviews, but
+It has a test suite and has been through five independent code reviews, but
 it has only ever run on the hardware below. Expect to tune it for yours.
 
 | | Tested on |
@@ -107,8 +110,9 @@ service starts.
 ./install/uninstall.sh
 ```
 
-This stops and removes the service and the installed program, removes the
-udev rule, makes udev look at the devices afresh, and takes back the
+This stops and removes the service and the installed program, including
+anything an earlier version installed as `finger-drag`, removes the udev
+rule, makes udev look at the devices afresh, and takes back the
 access to the touchpad and `/dev/uinput` that the rule had granted. Removing
 the rule alone would leave that access in place until the next reboot. The
 repository itself is left where it is.
@@ -153,6 +157,7 @@ Momentum scrolling has its own constants at the top of
 | `FLICK_BOOST_STEP` | 0.3 | make repeated flicks build up speed faster. Each repeat adds this much of the normal speed; 0 turns the build-up off |
 | `FLICK_BOOST_MAX` | 3.0 | let repeated flicks reach a higher top speed |
 | `FLICK_CHAIN_S` | 0.3 | allow a longer pause between flicks before the speed starts again from normal |
+| `FLICK_TOUCH_S` | 0.6 | let a longer stroke still count as a repeated flick |
 
 Set `NATURAL_SCROLL = False` there if you turn natural scrolling off for
 the touchpad. To change the shape of the slowdown itself, edit
@@ -173,7 +178,7 @@ installed copy. Its exit status says what it found:
 | Status | Meaning |
 |---|---|
 | 0 | The touchpad and `/dev/uinput` are both accessible |
-| 3 | Access is missing. Run the installer; if it has been run, log out and in |
+| 3 | No touchpad could be read. Usually access is missing: run the installer, and if it has been run, log out and in. A machine with no touchpad at all gives the same status |
 | 4 | The touchpad reports one position, not each finger, and cannot be used |
 | anything else | A different problem, such as a missing Python package or an error in edited code. Logging out will not fix it |
 
@@ -204,6 +209,10 @@ Run after installing or changing a tunable.
       and sideways.
 - [ ] The page does not lurch faster or slower at the moment of lifting.
 - [ ] Touching the pad stops a glide.
+- [ ] Flicking again while the page glides makes it glide faster, a little
+      more each time.
+- [ ] A flick the other way, or after a pause, glides at normal speed.
+- [ ] A flick inside the overview does not race through the workspaces.
 - [ ] A slow scroll that ends in a stop does not glide.
 - [ ] No app travels much too far after a flick (it may be adding its own
       glide on top).
@@ -229,15 +238,21 @@ Run after installing or changing a tunable.
 - There is no glide while GNOME's overview is open. Every notch of a wheel
   moves one workspace along there, so a glide would race through them.
   Scrolling with your fingers on the pad works in the overview as before.
-  Other parts of the desktop that act on each notch, such as the volume
-  icon in the top bar, do still receive glides.
+- Other parts of the desktop that act on each notch still receive glides,
+  so avoid flicking with the pointer over them. The likeliest is the Ubuntu
+  Dock, where scrolling switches workspace, about seven of them in one
+  glide. Then the volume and microphone icons in the top bar, where a glide
+  runs the level to one end, and the sliders in the quick settings menu.
 - Repeated flicks build up speed only while they follow one another: each
   must land while the page still glides, or within a third of a second of
-  it stopping, and go the same way. A flick the other way, a pause, a slow
-  scroll or any other touch in between starts again from normal speed.
+  it stopping, be a quick touch of no more than 0.6 s, and go the same way.
+  A flick the other way, a pause, fingers left resting on the pad, a long
+  scroll, a slow scroll or any other touch in between starts again from
+  normal speed.
 - A boosted glide starts faster than your fingers were moving, so the page
   speeds up at the moment you lift. That is the point of it.
-- A glide lasts up to about two seconds. During that time it goes to
+- A glide lasts two to three seconds, the longer the faster it started.
+  During that time it goes to
   whatever window is under the pointer, so it follows the pointer if an
   external mouse moves it, and pressing Ctrl zooms in apps that zoom on
   Ctrl+scroll. The daemon cannot see the keyboard, by design.

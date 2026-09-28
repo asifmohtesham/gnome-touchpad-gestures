@@ -143,6 +143,30 @@ class SwipeNeedsEveryFingerTest(unittest.TestCase):
                 fingers=tuple(positions))
         self.assertEqual(actions, [])
 
+    def test_swipe_fires_at_the_threshold_and_not_before(self):
+        paths = row(25.0, (-250.0, 0.0), frames=7)        # 2.5 mm a frame
+        self.assertEqual(touch(self.machine, [p[:6] for p in paths]), [])
+        self.assertIs(self.machine.state, State.SWIPE_TRACKING)
+        last = [p[6:] for p in paths]
+        self.assertEqual(touch(self.machine, last, start=0.06),
+                         [SwitchWorkspace(Direction.NEXT)])
+
+    def test_new_set_of_contacts_drops_travel_not_yet_shared(self):
+        # 14 mm of the centroid made by two fingers beside two resting ones,
+        # then a contact is replaced, then all four move 3 mm together.
+        beside = row(45.0, (0.0, 0.0), count=2, frames=15)
+        beside += [line((60.0, 40.0), (0.0, -200.0), frames=15),
+                   line((75.0, 40.0), (0.0, -200.0), frames=15)]
+        actions = touch(self.machine, beside)
+        together = [line(path[-1], (0.0, -300.0), frames=2) for path in beside]
+        for i, positions in enumerate(zip(*together)):
+            cx = sum(p[0] for p in positions) / 4
+            cy = sum(p[1] for p in positions) / 4
+            actions += self.machine.update(
+                0.15 + i * 0.01, 4, cx, cy, regrouped=(i == 0),
+                fingers=tuple(positions))
+        self.assertEqual(actions, [])
+
     def test_fingers_fanning_slightly_still_swipe(self):
         paths = [line((20.0, 40.0), (-30.0, -200.0)),
                  line((35.0, 40.0), (-10.0, -220.0)),

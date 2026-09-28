@@ -11,6 +11,14 @@ rules_dir="/etc/udev/rules.d"
 # Where the program is installed. The unit names the same place as
 # %h/.local/share/gnome-x11-touchpad-gestures, so the two must change together.
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
+# What this project installed when it was called finger-drag. Left in place,
+# the old service would run beside the new one and every gesture would
+# happen twice, and the old rule would go on granting access after an
+# uninstall. An upgrade removes all three.
+former="finger-drag"
+former_unit="$unit_dir/$former.service"
+former_program="$HOME/.local/share/$former"
+former_rule="71-$former.rules"
 # Exit status of `gnome_x11_touchpad_gestures.daemon --check` when device access is missing.
 no_access=3
 # ... and when the touchpad cannot tell fingers apart.
@@ -65,6 +73,7 @@ check_access() {
 # for any reason other than missing access is not something sudo can fix.
 needs_sudo() {
     cmp -s "$here/$rule" "$rules_dir/$rule" || return 0
+    [ ! -e "$rules_dir/$former_rule" ] || return 0
     local status=0
     check_access >/dev/null 2>&1 || status=$?
     [ "$status" -eq "$no_access" ]
@@ -79,14 +88,24 @@ install_program() {
     # Swapped in only once it is complete, so a copy that fails leaves the
     # working program where it was. Replaced whole, so a module removed from
     # the repository does not linger.
-    if [ -d "$program_dir/$package" ]; then
+    if [ -e "$program_dir/$package" ] || [ -L "$program_dir/$package" ]; then
         mv "$program_dir/$package" "$old"
     fi
     mv "$fresh" "$program_dir/$package"
     rm -rf "$old"
 }
 
+remove_former_service() {
+    if [ -e "$former_unit" ] || [ -e "$former_program" ]; then
+        echo "Removing the version installed as $former..."
+        systemctl --user disable --now "$former.service" 2>/dev/null || true
+        rm -f "$former_unit"
+        rm -rf "$former_program"
+    fi
+}
+
 install_service() {
+    remove_former_service
     install_program
     mkdir -p "$unit_dir"
     install -m 0644 "$here/$unit" "$unit_dir/$unit"
@@ -115,6 +134,9 @@ main_as() {
         if ! cmp -s "$here/$rule" "$rules_dir/$rule"; then
             sudo install -m 0644 "$here/$rule" "$rules_dir/$rule"
         fi
+        if [ -e "$rules_dir/$former_rule" ]; then
+            sudo rm -f "$rules_dir/$former_rule"
+        fi
         sudo udevadm control --reload
         sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
         # Only the touchpad: a change event makes X remove and re-add the
@@ -124,7 +146,7 @@ main_as() {
             --property-match=ID_INPUT_TOUCHPAD=1
         sudo udevadm settle
     else
-        echo "The udev rule is in place and access is granted: no password needed."
+        echo "The udev rule is already in place: no password needed."
     fi
 
     echo "Checking device access..."
