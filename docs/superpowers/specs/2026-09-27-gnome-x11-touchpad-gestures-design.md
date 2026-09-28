@@ -685,13 +685,45 @@ shell that has changed gets no swipe instead of a fault, and `SwipeBegin`
 answers false unless the shell has confirmed the swipe. A swipe that hears
 nothing for a second is put back, in case the daemon has gone.
 
+The shell's own gesture makes two checks before it reaches the tracker,
+which calling the tracker directly skips. The extension makes them itself:
+`SwipeBegin` answers false while the tracker is switched off, as it is
+while a switch of workspace made by keyboard is still sliding, and where
+the tracker does not work (`_allowedModes` against `Main.actionMode`), as
+in the overview or with a menu open. A swipe begun regardless went nowhere,
+or cut the slide short and left the tracker switched off. (Sixth review.)
+
+An update or an end that fails puts the workspace back. Forgetting the
+swipe instead left the workspace part way across with nothing to move it.
+A share of a workspace that is not a finite number is dropped: anything on
+the session bus can call, and it would poison the tracker's position.
+
+### What the pointer is over
+
+`PointerOverWindow` picks among what reacts to the pointer
+(`Clutter.PickMode.REACTIVE`) and looks up from there for one of the two
+window groups. The stage itself coming back counts as a window: nothing of
+the shell's is there. Picking among everything would not do, because the
+shell lays some things over the whole monitor without taking the pointer,
+the space around a notification for one, and glides would stop over every
+window while a notification showed.
+
 ### How it is split
 
 `gestures.js` holds the logic and imports nothing from the shell, so it is
 tested outside one, with `gjs` and stand-ins. `extension.js` hands it the
-pieces of the shell and exports the object. It cannot be run outside the
-shell; it is checked for syntax, and for offering exactly the calls the
-daemon makes.
+pieces of the shell and exports the object. It is checked for syntax, and
+for offering exactly the calls the daemon makes.
+
+It is also run. It imports three things that only the shell's own process
+has: the shell's `extension.js` and `main.js`, and Clutter. A test copies
+the extension, points those three imports at stand-ins
+(`tests/js/stand_ins/`), and runs the copy with `gjs` under
+`dbus-run-session`, on a message bus of its own. The daemon's own client,
+`shell.py`, then talks to it, so that both ends of the conversation are the
+real ones. The runner takes the name `org.gnome.Shell`, which is why it
+refuses to start where a shell is already answering. Until the sixth review
+no test ran this file, and twelve deliberate faults in it went unnoticed.
 
 ### The daemon's side
 
@@ -700,6 +732,21 @@ The gesture machine takes a sideways swipe up once it has gone
 it goes: `SwipeBegin`, a `SwipeMove` for each frame, `SwipeEnd` when every
 finger is up, `SwipeCancel` if finger state was lost. A swipe up or down is
 still one action after `SWIPE_MM`.
+
+`SwipeBegin` carries the travel that set the swipe off, apart from the
+moves. At first it was sent as the first move, bearing the time of the
+begin, and so seemed to have been made in no time: the shell took a drift
+of 4.3 mm for a flick and changed workspace, while a deliberate swipe of
+10 mm sprang back. A shell that follows the fingers is not told of that
+travel and starts from where the fingers are, as its own gesture does.
+`Snap` counts it, so the fallback still switches after 15 mm in all.
+
+Fingers held still make no moves to report. The machine has a deadline
+while a swipe is followed, and says that nothing moved (`SwipeMove` of
+nothing) every `SWIPE_KEEPALIVE_S`, 0.3 s. Without that the extension,
+hearing nothing for a second, took the daemon for gone and put the
+workspace back under resting fingers. A test holds the extension's second
+to at least three of these.
 
 The output asks the shell at every `SwipeBegin` whether it takes the swipe
 up. If it does, moves are sent on as shares of `SWIPE_FULL_MM`, without
@@ -713,13 +760,42 @@ answers, and otherwise only whether the overview is open. The extension not
 answering is the ordinary case before it is installed. It is logged once,
 and the extension is then left alone for `SHELL_RETRY_S`.
 
+A shell that says nothing is another matter than one that says "no such
+thing". The extension answers on the shell's own connection, so a question
+that goes unanswered (`NoReply`) is word about both, and lets the other
+question rest as well. Otherwise each waits out its timeout and a glide
+begins a second late.
+
+### When a frame happened
+
+Frames are read in batches, and after the daemon was held up a batch holds
+several. The kernel is asked (`EVIOCSCLOCKID`) to stamp this reader's
+events by the monotonic clock, which is the one the daemon reads, and each
+frame bears the time of the report that closes it. `FrameTimes` sees to it
+that time handed to the machines never runs back, that no frame happens
+after it was read, and that a stamp older than `STAMP_MAX_AGE_S` is not
+believed. A kernel that will not leaves things as they were: frames bear
+the time of reading.
+
 ### Installing it
 
-The installer copies it to `~/.local/share/gnome-shell/extensions/`, built
-beside the old copy and swapped in, as the program is. It asks the shell to
-switch it on. A shell that has not seen the extension yet cannot, so it is
-then added to the list of enabled extensions in the settings, which the
-shell reads when it starts. A list that cannot be read is not written.
+The installer copies it to `~/.local/share/gnome-shell/extensions/`. Its
+three files are named one by one, so that nothing else lying in the
+directory is installed. The new copy is made ready beside the program and
+moved into place whole. It is not made ready among the extensions, as it
+first was: the shell takes every directory there for an extension, and
+would trip on what a failed copy left behind. A copy that cannot be moved
+into place puts the old one back.
+
+It asks the shell to switch it on. A shell that has not seen the extension
+yet cannot, so it is then added to the list of enabled extensions in the
+settings, which the shell reads when it starts, and taken out of the list
+of disabled ones, which is the list that wins and where the shell writes
+an extension down when asked to switch it off. A list that cannot be read,
+or that holds more than names, is not written.
+
+The uninstaller asks the shell to switch it off and then clears both lists
+of it, whether or not the shell could be asked.
 
 The shell loads an extension when it starts, so a new or changed one needs
 the shell restarted. On X11 that keeps the windows open. `--check` reports

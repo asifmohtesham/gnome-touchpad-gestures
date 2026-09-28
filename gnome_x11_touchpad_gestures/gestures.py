@@ -14,6 +14,7 @@ POINTER_COUNTS_PER_MM = 12.0
 SWIPE_MM = 15.0
 SWIPE_BEGIN_MM = 4.0      # a sideways swipe is taken up once it has gone this far
 SWIPE_FULL_MM = 40.0      # finger travel that moves one whole workspace
+SWIPE_KEEPALIVE_S = 0.3   # a swipe held still says so this often
 SWIPE_AXIS_RATIO = 1.5
 SWIPE_TOGETHER_MM = 2.0  # travel over which the fingers are compared
 
@@ -52,8 +53,14 @@ class Overview:
 
 @dataclass(frozen=True)
 class SwipeBegin:
-    """A sideways swipe of four fingers has set off."""
+    """A sideways swipe of four fingers has set off.
+
+    `travel` is how far the fingers had gone by then, in millimetres. It is
+    kept apart from the moves that follow because it was made before `t`,
+    over a time nobody measured.
+    """
     t: float
+    travel: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -92,18 +99,23 @@ class Snap:
 
     def feed(self, action) -> list[SwitchWorkspace]:
         if isinstance(action, SwipeBegin):
-            self._travel = 0.0
+            self._travel = action.travel
             self._open = True
-        elif isinstance(action, SwipeMove) and self._open:
+            return self._switch_if_far_enough()
+        if isinstance(action, SwipeMove) and self._open:
             self._travel += action.dx
-            if abs(self._travel) >= SWIPE_MM:
-                self._open = False
-                # Content follows the fingers: moving left reveals the next.
-                return [SwitchWorkspace(
-                    Direction.NEXT if self._travel < 0 else Direction.PREVIOUS)]
-        elif isinstance(action, (SwipeEnd, SwipeCancel)):
+            return self._switch_if_far_enough()
+        if isinstance(action, (SwipeEnd, SwipeCancel)):
             self._open = False
         return []
+
+    def _switch_if_far_enough(self) -> list[SwitchWorkspace]:
+        if abs(self._travel) < SWIPE_MM:
+            return []
+        self._open = False
+        # Content follows the fingers: moving left reveals the next.
+        return [SwitchWorkspace(
+            Direction.NEXT if self._travel < 0 else Direction.PREVIOUS)]
 
 
 class State(enum.Enum):
@@ -141,15 +153,24 @@ class GestureMachine:
         return self._deadline
 
     def tick(self, t: float) -> list[Action]:
-        if self._deadline is not None and t >= self._deadline:
-            self._enter_idle()
-            return [ButtonUp()]
-        return []
+        if self._deadline is None or t < self._deadline:
+            return []
+        if self.state is State.SWIPE_FOLLOWING:
+            # Fingers held still make no moves to report, and a shell that
+            # hears nothing takes the daemon for gone and puts the workspace
+            # back. So it is told that they have not moved.
+            self._deadline = t + SWIPE_KEEPALIVE_S
+            return [SwipeMove(t, 0.0)]
+        self._enter_idle()
+        return [ButtonUp()]
 
     def update(self, t: float, count: int, cx: float, cy: float,
                regrouped: bool = False, fingers: tuple = (),
                pressed: bool = False) -> list[Action]:
-        actions = self.tick(t)
+        # A swipe that is followed has its say below, where a frame with
+        # something to report is not preceded by word that nothing moved.
+        following = self.state is State.SWIPE_FOLLOWING
+        actions = [] if following else self.tick(t)
         dx, dy = self._delta(t, count, cx, cy, regrouped, fingers)
         if self.state is State.IDLE:
             actions += self._idle(t, count, dx, dy)
@@ -160,7 +181,7 @@ class GestureMachine:
         elif self.state is State.SWIPE_TRACKING:
             actions += self._swipe_tracking(t, count, dx, dy)
         elif self.state is State.SWIPE_FOLLOWING:
-            actions += self._swipe_following(t, count, dx)
+            actions += self._swipe_following(t, count, dx) or self.tick(t)
         else:
             actions += self._swipe_done(count)
         return actions
@@ -261,7 +282,8 @@ class GestureMachine:
         under_way = math.hypot(sx, sy) >= SWIPE_BEGIN_MM
         if under_way and abs(sx) >= SWIPE_AXIS_RATIO * abs(sy):
             self.state = State.SWIPE_FOLLOWING
-            return [SwipeBegin(t), SwipeMove(t, sx)]
+            self._deadline = t + SWIPE_KEEPALIVE_S
+            return [SwipeBegin(t, sx)]
         if abs(sy) >= SWIPE_MM and abs(sy) >= SWIPE_AXIS_RATIO * abs(sx):
             self.state = State.SWIPE_DONE
             # The pad's y grows towards the user, so moving up is negative.
@@ -276,6 +298,7 @@ class GestureMachine:
             # Fewer fingers are fingers on their way off, or one that
             # slipped. Their motion is not the swipe's.
             return []
+        self._deadline = t + SWIPE_KEEPALIVE_S
         return [SwipeMove(t, dx)]
 
     def _swiping_together(self) -> bool:

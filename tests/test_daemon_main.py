@@ -257,6 +257,26 @@ class MainTest(unittest.TestCase):
             daemon.main([])
         self.assertIn(gnome_x11_touchpad_gestures.__version__, stdout.getvalue())
 
+    def times_given_to_the_loop(self, kernel_agrees):
+        touchpad = FakeTouchpad([interrupt])
+        with mock.patch.object(daemon, "stamp_by_our_clock",
+                               return_value=kernel_agrees) as asked, \
+                mock.patch.object(daemon, "run",
+                                  side_effect=KeyboardInterrupt) as loop:
+            self.assertEqual(self.run_main(touchpad), 0)
+        asked.assert_called_once_with(touchpad)
+        return loop.call_args.kwargs["times"]
+
+    def test_frames_bear_the_kernel_s_times_where_it_gives_them(self):
+        class Report:
+            type, code, value = e.EV_SYN, e.SYN_REPORT, 0
+
+            def timestamp(self):
+                return 9.99
+
+        self.assertEqual(self.times_given_to_the_loop(True).of(Report(), 10.0), 9.99)
+        self.assertEqual(self.times_given_to_the_loop(False).of(Report(), 10.0), 10.0)
+
     def run_main(self, touchpad):
         if touchpad is not None:
             # A test that goes wrong must fail, not leave the daemon waiting.
@@ -384,7 +404,9 @@ class MainTest(unittest.TestCase):
         self.assertEqual(FakeShell.swipes[0], "begin")
         self.assertEqual(FakeShell.swipes[-1], "end")
         moved = [s for s in FakeShell.swipes if not isinstance(s, str)]
-        self.assertAlmostEqual(sum(moved), 60.0 / 40.0, places=2)
+        # The first step of 10 mm is what set the swipe off. The shell
+        # follows from where the fingers were then.
+        self.assertAlmostEqual(sum(moved), (60.0 - 10.0) / 40.0, places=2)
         self.assertTrue(all(step > 0 for step in moved))
         self.assertEqual(self.keys_pressed(), [])
 

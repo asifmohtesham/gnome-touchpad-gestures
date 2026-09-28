@@ -65,6 +65,23 @@ class MetadataTest(unittest.TestCase):
         for version in versions:
             self.assertRegex(version, r"^\d+$")
 
+    def test_only_the_shell_it_was_written_against_is_named(self):
+        # It works on parts of the shell that are the shell's own business
+        # and may change with any version. A version is named here once the
+        # extension has been seen to work in it, and not before.
+        self.assertEqual(self.metadata["shell-version"], ["46"])
+
+    def test_it_is_not_loaded_on_the_lock_screen(self):
+        # Nothing there is to be swiped or scrolled, and an extension has
+        # to give reasons for being there. Left out, it is the user's
+        # session alone.
+        self.assertNotIn("session-modes", self.metadata)
+
+    def test_nothing_is_in_it_that_the_shell_does_not_know(self):
+        self.assertEqual(
+            sorted(self.metadata),
+            ["description", "name", "shell-version", "url", "uuid", "version-name"])
+
 
 class InterfaceTest(unittest.TestCase):
     """The daemon and the extension are written apart and must agree."""

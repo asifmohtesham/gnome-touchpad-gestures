@@ -21,6 +21,37 @@ touchpad_nodes() {
     done
 }
 
+# Prints a list of extensions with ours taken out, or nothing if it is not
+# in it or the list cannot be understood. A list that cannot be read is
+# never written over.
+without_extension() {
+    python3 - "$extension" "$1" <<'PYTHON'
+import ast
+import sys
+
+uuid, listed = sys.argv[1], sys.argv[2].strip()
+if listed.startswith("@as "):
+    listed = listed[4:]
+try:
+    names = ast.literal_eval(listed)
+except (SyntaxError, ValueError):
+    sys.exit(0)
+if not isinstance(names, list) or not all(isinstance(n, str) for n in names):
+    sys.exit(0)
+if uuid in names:
+    print([name for name in names if name != uuid])
+PYTHON
+}
+
+# Takes the extension out of one of the shell's two lists.
+unlist_extension() {
+    local key="$1" edited
+    edited="$(without_extension "$(gsettings get org.gnome.shell "$key")")"
+    if [ -n "$edited" ]; then
+        gsettings set org.gnome.shell "$key" "$edited"
+    fi
+}
+
 refuse_root() {
     local uid="$1"
     if [ "$uid" -eq 0 ]; then
@@ -41,7 +72,13 @@ main_as() {
     rm -rf "$program_dir" "$HOME/.local/share/$former"
 
     echo "Switching off and removing the shell extension..."
+    # The shell switches it off at once, if it has it loaded, and writes it
+    # down among those switched off. A shell that has not loaded it cannot
+    # be asked, and leaves it among those switched on. Either way the
+    # settings are cleared of it by hand, so that nothing is left behind.
     gnome-extensions disable "$extension" 2>/dev/null || true
+    unlist_extension enabled-extensions
+    unlist_extension disabled-extensions
     rm -rf "$extension_dir"
 
     echo "Removing udev rule and device access (needs sudo)..."

@@ -28,7 +28,7 @@ what they installed.
 ## Status
 
 A personal project, written with Claude Code and used daily on one laptop.
-It has a test suite and has been through five independent code reviews, but
+It has a test suite and has been through six independent code reviews, but
 it has only ever run on the hardware below. Expect to tune it for yours.
 
 | | Tested on |
@@ -98,10 +98,25 @@ Everything works without it, less well:
 | Four-finger swipe sideways | The workspace follows your fingers, and springs back if you let go early | One switch, after 15 mm of travel |
 | Momentum | Only with the pointer over a window | Everywhere except in the overview |
 
+Even with the extension, some swipes are the one on the right. The shell
+follows a swipe only where its own gesture would: not in the overview, not
+with a menu open, not while a switch of workspace is still sliding, and
+not with the pointer on a monitor that has no workspaces of its own, which
+by default is every monitor but the primary one. The daemon asks at the
+start of every swipe and takes no for an answer.
+
 The extension uses parts of GNOME Shell that are not meant for extensions
 and can change from one version to the next. It is written for GNOME Shell
-46. On another version it may not load, or may load and decline every
-swipe; the gestures then behave as in the right-hand column.
+46 and the shell will not load it on another. Should it misbehave, switch
+it off:
+
+```bash
+gnome-extensions disable gnome-x11-touchpad-gestures@asifmohtesham.github.io
+```
+
+That takes effect at once, without restarting the shell, and the gestures
+then behave as in the right-hand column. `gnome-extensions enable` with the
+same name switches it back on, and so does running the installer.
 
 ### What the installer changes
 
@@ -117,7 +132,9 @@ swipe; the gestures then behave as in the right-hand column.
 - **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
 - **The shell extension**, copied to
   `~/.local/share/gnome-shell/extensions/gnome-x11-touchpad-gestures@asifmohtesham.github.io`
-  and switched on.
+  and switched on. If the shell cannot be asked to, its name is written
+  into the shell's settings, `enabled-extensions`, and taken out of
+  `disabled-extensions`.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
@@ -135,11 +152,15 @@ service starts.
 ```
 
 This stops and removes the service and the installed program, including
-anything an earlier version installed as `finger-drag`, removes the udev
-rule, makes udev look at the devices afresh, and takes back the
-access to the touchpad and `/dev/uinput` that the rule had granted. Removing
-the rule alone would leave that access in place until the next reboot. The
-repository itself is left where it is.
+anything an earlier version installed as `finger-drag`. It switches the
+shell extension off, removes it, and takes its name out of the shell's
+settings. It removes the udev rule, makes udev look at the devices afresh,
+and takes back the access to the touchpad and `/dev/uinput` that the rule
+had granted. Removing the rule alone would leave that access in place until
+the next reboot. The repository itself is left where it is.
+
+The shell keeps the extension's code in memory until it is next restarted.
+Switched off, that code does nothing.
 
 Two limits. A reboot completes the removal: until then the login manager may
 grant access to `/dev/uinput` again at your next login. And if another
@@ -225,6 +246,11 @@ newer than what is installed: run `./install/install.sh`.
 python3 -m unittest discover -s tests
 ```
 
+The tests of the extension need `gjs`, and those that run it need
+`dbus-run-session` as well, from the package `dbus-daemon`. Both are there
+on a GNOME desktop. Without them those tests are skipped. The extension is
+run on a message bus of its own, never on the desktop's.
+
 ## Manual checklist
 
 Run after installing or changing a tunable.
@@ -237,6 +263,13 @@ Run after installing or changing a tunable.
 - [ ] Four-finger swipe left and right moves the workspace under the
       fingers. Let go past half way, or with a flick, and it changes;
       let go early and it springs back.
+- [ ] Four fingers that drift a few millimetres sideways and lift do not
+      change the workspace.
+- [ ] A swipe held still half way for a few seconds stays where it is, and
+      carries on when the fingers do.
+- [ ] A four-finger swipe sideways with a menu open changes the workspace
+      in one step, or does nothing. It does not leave the workspace half
+      way across.
 - [ ] A two-finger flick with the pointer over the dock or the top bar
       does not glide.
 - [ ] Suspend and resume; gestures work again within a few seconds.
@@ -245,7 +278,7 @@ Run after installing or changing a tunable.
       open.
 - [ ] Four-finger swipe down closes the overview.
 - [ ] A four-finger swipe sideways inside the overview still switches
-      workspace.
+      workspace, in one step after 15 mm.
 - [ ] A two-finger flick keeps gliding in the same direction, up, down
       and sideways.
 - [ ] The page does not lurch faster or slower at the moment of lifting.
@@ -264,6 +297,9 @@ Run after installing or changing a tunable.
   finger left on the pad can nudge the dragged item.
 - Workspaces follow the fingers only with the extension loaded, and only
   sideways. The overview still opens and closes in one step.
+- The workspace starts to follow once the fingers have gone 4 mm, and
+  follows from where they are then. Those first millimetres decide which
+  way the swipe goes and move nothing.
 - With GNOME's animations switched off, the workspace follows the fingers
   but settles at once when you let go, without sliding into place.
 - Holding a physical modifier key while swiping changes what the key chord
@@ -272,8 +308,8 @@ Run after installing or changing a tunable.
   part works on GNOME only. GNOME ignores the request on the lock screen and
   while a menu is open, as it does the Super key.
 - While the daemon waits for GNOME to answer, no gesture is handled. It waits
-  half a second at most, then logs it and carries on. GNOME may still act on
-  the request when it wakes.
+  half a second at most, then logs it, carries on, and asks GNOME nothing
+  more for five seconds. GNOME may still act on the request when it wakes.
 - A four-finger swipe needs all the fingers to move. Contacts that rest on
   the pad while others move are not a swipe.
 - For about a third of a second after any touch with three or more fingers,

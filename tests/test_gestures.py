@@ -83,10 +83,17 @@ class FollowingTest(unittest.TestCase):
         self.assertEqual(self.swipe(60.0, 58.0, 57.0), [])
         self.assertIs(self.machine.state, State.SWIPE_TRACKING)
 
-    def test_swipe_begins_with_the_travel_made_so_far(self):
+    def test_swipe_begins_by_saying_how_far_the_fingers_had_gone(self):
         actions = self.swipe(60.0, 58.0, 55.0)
-        self.assertEqual(actions, [SwipeBegin(0.02), SwipeMove(0.02, -5.0)])
+        self.assertEqual(actions, [SwipeBegin(0.02, travel=-5.0)])
         self.assertIs(self.machine.state, State.SWIPE_FOLLOWING)
+
+    def test_travel_made_before_the_swipe_began_is_not_reported_as_a_move(self):
+        # As a move it would bear the time of the begin, and so seem to have
+        # been made in no time at all: a drift would pass for a flick.
+        actions = self.swipe(60.0, 58.0, 55.7)
+        actions += self.machine.update(0.4, 0, 0.0, 0.0)
+        self.assertEqual([a for a in actions if isinstance(a, SwipeMove)], [])
 
     def test_every_frame_after_reports_how_far_the_fingers_went(self):
         self.swipe(60.0, 55.0)
@@ -107,7 +114,14 @@ class FollowingTest(unittest.TestCase):
     def test_nothing_of_the_travel_is_lost(self):
         actions = self.swipe(80.0, 79.0, 77.0, 72.0, 64.0, 50.0, 41.0, 40.5)
         moved = sum(a.dx for a in actions if isinstance(a, SwipeMove))
+        moved += sum(a.travel for a in actions if isinstance(a, SwipeBegin))
         self.assertAlmostEqual(moved, 40.5 - 80.0)
+
+    def test_moves_bear_the_time_they_were_made(self):
+        actions = self.swipe(80.0, 79.0, 77.0, 72.0, 64.0, 50.0)
+        moves = [a for a in actions if isinstance(a, SwipeMove)]
+        self.assertEqual([(a.t, a.dx) for a in moves],
+                         [(0.04, -8.0), (0.05, -14.0)])
 
     def test_lifting_every_finger_ends_the_swipe(self):
         self.swipe(60.0, 50.0)
@@ -157,7 +171,103 @@ class FollowingTest(unittest.TestCase):
         self.swipe(60.0, 50.0)
         self.machine.update(0.5, 0, 0.0, 0.0)
         actions = self.swipe(30.0, 36.0, start=1.0)
-        self.assertEqual(actions, [SwipeBegin(1.01), SwipeMove(1.01, 6.0)])
+        self.assertEqual(actions, [SwipeBegin(1.01, travel=6.0)])
+
+
+class HeldSwipeTest(unittest.TestCase):
+    """Fingers held still say nothing, and a shell that hears nothing for a
+    second takes the daemon for gone and puts the workspace back."""
+
+    def setUp(self):
+        self.machine = GestureMachine()
+        raw(self.machine, [(0.00, 4, 60.0, 25.0), (0.01, 4, 50.0, 25.0),
+                           (0.02, 4, 45.0, 25.0)])
+
+    def test_swipe_under_way_is_due_to_report_again(self):
+        self.assertAlmostEqual(self.machine.next_deadline(),
+                               0.02 + g.SWIPE_KEEPALIVE_S)
+
+    def test_swipe_held_from_the_moment_it_began_is_due_to_report(self):
+        machine = GestureMachine()
+        raw(machine, [(0.00, 4, 60.0, 25.0), (0.01, 4, 50.0, 25.0)])
+        self.assertAlmostEqual(machine.next_deadline(), 0.01 + g.SWIPE_KEEPALIVE_S)
+        due = machine.next_deadline()
+        self.assertEqual(machine.tick(due), [SwipeMove(due, 0.0)])
+
+    def test_nothing_is_said_before_it_is_due(self):
+        self.assertEqual(self.machine.tick(0.02 + g.SWIPE_KEEPALIVE_S - 0.01), [])
+
+    def test_fingers_held_still_report_that_they_have_not_moved(self):
+        due = self.machine.next_deadline()
+        self.assertEqual(self.machine.tick(due), [SwipeMove(due, 0.0)])
+        self.assertIs(self.machine.state, State.SWIPE_FOLLOWING)
+
+    def test_they_go_on_reporting_for_as_long_as_they_are_held(self):
+        said = []
+        for _ in range(10):
+            due = self.machine.next_deadline()
+            said += self.machine.tick(due)
+        self.assertEqual(len(said), 10)
+        self.assertLessEqual(max(b.t - a.t for a, b in zip(said, said[1:])),
+                             g.SWIPE_KEEPALIVE_S + 1e-9)
+
+    def test_every_move_puts_the_next_report_off(self):
+        self.machine.update(0.2, 4, 44.0, 25.0)
+        self.assertAlmostEqual(self.machine.next_deadline(),
+                               0.2 + g.SWIPE_KEEPALIVE_S)
+
+    def test_frames_without_motion_do_not_keep_it_quiet(self):
+        # A pad that reports still fingers over and over must not be able
+        # to starve the shell of word.
+        said = []
+        for i in range(1, 60):
+            said += self.machine.update(0.02 + i * 0.01, 4, 45.0, 25.0)
+        self.assertEqual(said, [SwipeMove(0.02 + 30 * 0.01, 0.0)])
+
+    def test_fingers_on_their_way_off_still_report(self):
+        self.machine.update(0.03, 3, 40.0, 25.0)
+        due = self.machine.next_deadline()
+        self.assertEqual(self.machine.tick(due), [SwipeMove(due, 0.0)])
+
+    def test_swipe_held_and_then_carried_on(self):
+        due = self.machine.next_deadline()
+        self.machine.tick(due)
+        self.assertEqual(self.machine.update(due + 0.1, 4, 40.0, 25.0),
+                         [SwipeMove(due + 0.1, -5.0)])
+
+    def test_nothing_is_due_once_the_fingers_are_up(self):
+        self.machine.update(0.5, 0, 0.0, 0.0)
+        self.assertIsNone(self.machine.next_deadline())
+        self.assertEqual(self.machine.tick(5.0), [])
+
+    def test_nothing_is_due_once_the_swipe_is_abandoned(self):
+        self.machine.interrupt(0.5)
+        self.assertIsNone(self.machine.next_deadline())
+        self.assertEqual(self.machine.tick(5.0), [])
+
+    def test_held_swipe_holds_no_button(self):
+        due = self.machine.next_deadline()
+        self.assertNotIn(ButtonUp(), self.machine.tick(due))
+
+    def test_swipe_up_is_not_due_to_report(self):
+        machine = GestureMachine()
+        raw(machine, [(0.00, 4, 60.0, 40.0), (0.01, 4, 60.0, 30.0),
+                      (0.02, 4, 60.0, 20.0)])
+        self.assertIsNone(machine.next_deadline())
+
+    def test_swipe_not_yet_under_way_is_not_due_to_report(self):
+        machine = GestureMachine()
+        raw(machine, [(0.00, 4, 60.0, 25.0), (0.01, 4, 58.0, 25.0)])
+        self.assertIsNone(machine.next_deadline())
+
+    def test_reports_come_well_within_the_time_the_shell_waits(self):
+        import pathlib
+        import re
+        source = (pathlib.Path(__file__).resolve().parent.parent / "extension"
+                  / "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+                  / "gestures.js").read_text()
+        waits_ms = int(re.search(r"export const WATCHDOG_MS = (\d+);", source).group(1))
+        self.assertGreaterEqual(waits_ms / 1000, 3 * g.SWIPE_KEEPALIVE_S)
 
 
 class SnapTest(unittest.TestCase):
@@ -192,6 +302,27 @@ class SnapTest(unittest.TestCase):
     def test_each_swipe_is_counted_from_nothing(self):
         self.feed(SwipeBegin(0.0), SwipeMove(0.0, -14.0), SwipeEnd(0.2))
         self.assertEqual(self.feed(SwipeBegin(1.0), SwipeMove(1.0, -14.0)), [])
+
+    def test_travel_made_before_the_swipe_began_counts(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0, travel=-5.0), SwipeMove(0.1, -9.0)), [])
+        self.assertEqual(
+            self.feed(SwipeMove(0.2, -1.0)), [SwitchWorkspace(Direction.NEXT)])
+
+    def test_swipe_that_began_far_enough_along_switches_at_once(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0, travel=16.0)),
+            [SwitchWorkspace(Direction.PREVIOUS)])
+        self.assertEqual(self.feed(SwipeMove(0.1, 30.0)), [])
+
+    def test_travel_of_one_swipe_is_not_carried_into_the_next(self):
+        self.feed(SwipeBegin(0.0, travel=-14.0), SwipeEnd(0.2))
+        self.assertEqual(self.feed(SwipeBegin(1.0, travel=-14.0)), [])
+
+    def test_fingers_held_still_are_nothing(self):
+        self.assertEqual(
+            self.feed(SwipeBegin(0.0, travel=-14.0), SwipeMove(0.3, 0.0),
+                      SwipeMove(0.6, 0.0)), [])
 
     def test_moves_without_a_swipe_are_nothing(self):
         self.assertEqual(self.feed(SwipeMove(0.0, -40.0)), [])

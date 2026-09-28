@@ -39,6 +39,7 @@ export default class GesturesExtension extends Extension {
     enable() {
         this._swipe = new WorkspaceSwipe({
             tracker: () => Main.wm._workspaceAnimation._swipeTracker,
+            mode: () => Main.actionMode,
             pointer: () => global.get_pointer(),
             schedule: (ms, fire) => GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
                 fire();
@@ -63,10 +64,11 @@ export default class GesturesExtension extends Extension {
 
     PointerOverWindow() {
         const [x, y] = global.get_pointer();
-        const actor = global.stage.get_actor_at_pos(Clutter.PickMode.ALL, x, y);
+        const actor = global.stage.get_actor_at_pos(
+            Clutter.PickMode.REACTIVE, x, y);
         return isOverWindow(
             actor, [global.window_group, global.top_window_group],
-            Main.overview.visible);
+            Main.overview.visible, global.stage);
     }
 
     SwipeBegin(time) {

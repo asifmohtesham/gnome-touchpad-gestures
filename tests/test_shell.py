@@ -18,6 +18,7 @@ class FakeBus:
         self.flushed = 0
         self.extension_error = None
         self.extension_answers = {}
+        self.overview_error = None
 
     def call_blocking(self, bus_name, object_path, interface, method,
                       signature, args, timeout=None):
@@ -32,6 +33,8 @@ class FakeBus:
             if self.extension_error:
                 raise self.extension_error
             return self.extension_answers.get(method)
+        if self.overview_error:
+            raise self.overview_error
         return self.answer
 
     def send_message(self, message):
@@ -201,11 +204,21 @@ class ExtensionTest(unittest.TestCase):
     """What the daemon asks of the extension, and how it copes without it."""
 
     MISSING = RuntimeError("No such interface")
+    # What the bus says when the shell is there and the extension is not,
+    # and when the shell is there and says nothing.
+    UNKNOWN = dbus.DBusException(
+        "No such object", name="org.freedesktop.DBus.Error.UnknownObject")
+    SILENT = dbus.DBusException(
+        "Did not receive a reply", name="org.freedesktop.DBus.Error.NoReply")
 
     def setUp(self):
         self.bus = FakeBus()
         self.now = 100.0
         self.shell = Shell(connect=lambda: self.bus, clock=lambda: self.now)
+
+    def about_the_overview(self):
+        return [call for call in self.bus.calls
+                if call[1] == "/org/gnome/Shell" and call[3] == "Get"]
 
     def quietly(self, call, *args):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
@@ -310,8 +323,15 @@ class ExtensionTest(unittest.TestCase):
 
     def test_version_of_the_extension_that_is_loaded(self):
         self.bus.extension_answers["Get"] = dbus.String("0.2.0")
-        self.bus.properties_of_the_extension = True
         self.assertEqual(self.quietly(self.shell.extension_version), ("0.2.0", ""))
+
+    def test_version_is_asked_of_the_extension_and_not_waited_on_for_long(self):
+        self.bus.extension_answers["Get"] = dbus.String("0.2.0")
+        self.quietly(self.shell.extension_version)
+        self.assertEqual(self.bus.calls, [(
+            "org.gnome.Shell", EXTENSION_PATH,
+            "org.freedesktop.DBus.Properties", "Get", "ss",
+            (EXTENSION_INTERFACE, "Version"), OVERVIEW_TIMEOUT_S)])
 
     def test_no_version_without_the_extension(self):
         self.bus.extension_error = self.MISSING
@@ -348,10 +368,79 @@ class ExtensionTest(unittest.TestCase):
         self.assertIs(self.quietly(self.shell.swipe_begin, self.now)[0], True)
 
     def test_missing_extension_does_not_silence_the_overview_question(self):
+        for missing in (self.MISSING, self.UNKNOWN):
+            with self.subTest(missing=missing):
+                self.setUp()
+                self.bus.extension_error = missing
+                self.bus.answer = dbus.Boolean(True)
+                self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+                self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+                self.assertEqual(len(self.about_the_overview()), 2)
+
+    def test_extension_lost_again_is_said_again(self):
         self.bus.extension_error = self.MISSING
-        self.bus.answer = dbus.Boolean(True)
+        self.assertIn("extension", self.quietly(self.shell.swipe_begin, 1.0)[1])
+        self.bus.extension_error = None
+        self.now += SHELL_RETRY_S
+        self.assertEqual(self.quietly(self.shell.swipe_begin, 2.0)[1], "")
+        self.bus.extension_error = self.MISSING
+        self.assertIn("extension", self.quietly(self.shell.swipe_begin, 3.0)[1])
+
+    # A shell that says nothing. Every question put to it holds the daemon
+    # up for the whole timeout, and the extension answers on the shell's
+    # own connection: one unanswered question is word enough about both.
+
+    def test_shell_that_says_nothing_is_asked_one_question_not_two(self):
+        self.bus.extension_error = self.SILENT
+        self.bus.overview_error = self.SILENT
+        self.assertIs(self.quietly(self.shell.may_glide)[0], True)
+        self.assertEqual(len(self.bus.calls), 1)
+
+    def test_it_is_asked_nothing_more_for_a_while(self):
+        self.bus.extension_error = self.SILENT
+        self.bus.overview_error = self.SILENT
+        self.quietly(self.shell.may_glide)
+        self.now += SHELL_RETRY_S / 2
+        self.quietly(self.shell.may_glide)
+        self.quietly(self.shell.overview_is_open)
+        self.quietly(self.shell.swipe_begin, self.now)
+        self.assertEqual(len(self.bus.calls), 1)
+
+    def test_it_is_asked_again_after_that_while(self):
+        self.bus.extension_error = self.SILENT
+        self.bus.overview_error = self.SILENT
+        self.quietly(self.shell.may_glide)
+        self.bus.extension_error = self.bus.overview_error = None
+        self.bus.extension_answers["PointerOverWindow"] = dbus.Boolean(False)
+        self.now += SHELL_RETRY_S
         self.assertIs(self.quietly(self.shell.may_glide)[0], False)
-        self.assertIs(self.quietly(self.shell.may_glide)[0], False)
+
+    def test_silence_about_the_overview_spares_the_extension_too(self):
+        self.bus.extension_error = self.MISSING
+        self.bus.answer = dbus.Boolean(False)
+        self.quietly(self.shell.may_glide)
+        self.now += SHELL_RETRY_S - 1.0
+        self.bus.overview_error = self.SILENT
+        self.quietly(self.shell.may_glide)
+        asked = len(self.bus.calls)
+        self.now += 2.0   # the extension's own rest is over, the shell's is not
+        self.quietly(self.shell.swipe_begin, self.now)
+        self.quietly(self.shell.may_glide)
+        self.assertEqual(len(self.bus.calls), asked)
+
+    def test_silence_is_said_once_and_not_as_two_complaints(self):
+        self.bus.extension_error = self.SILENT
+        self.bus.overview_error = self.SILENT
+        message = self.quietly(self.shell.may_glide)[1]
+        self.assertEqual(len(message.strip().splitlines()), 1)
+        self.now += SHELL_RETRY_S
+        self.assertEqual(self.quietly(self.shell.may_glide)[1], "")
+
+    def test_request_to_open_the_overview_is_tried_even_then(self):
+        self.bus.extension_error = self.SILENT
+        self.quietly(self.shell.may_glide)
+        self.quietly(self.shell.show_overview, True)
+        self.assertEqual(self.bus.calls[-1], request(True))
 
 
 if __name__ == "__main__":
