@@ -4,6 +4,17 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
+## 0.2.1 (unreleased)
+
+Fixed
+- The installer advised restarting the shell at the end of every install,
+  and said that workspaces would snap across until then, whether or not
+  that was so. It now asks the shell what it has loaded, and says that no
+  restart is needed when the extension is loaded and has not changed.
+
+This version changes nothing in the extension but its version number. The
+shell still has to be restarted once to load it under the new number.
+
 ## 0.2.0 (2026-09-28)
 
 Added

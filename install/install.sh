@@ -149,12 +149,65 @@ list_extension() {
     fi
 }
 
+# Whether installing the extension changed what was installed: yes or no.
+# Set by install_extension.
+extension_changed="yes"
+
+# Whether the extension installed is, file for file, the one given.
+extension_is_installed_from() {
+    local from="$1" file
+    for file in extension.js gestures.js metadata.json; do
+        cmp -s "$from/$file" "$extensions_dir/$extension/$file" || return 1
+    done
+}
+
+# The version of the extension the shell has loaded, or nothing if it has
+# loaded none or cannot be asked. Asked by the daemon's own client.
+loaded_extension_version() {
+    (cd "$repo" && python3 -c '
+from gnome_x11_touchpad_gestures.shell import Shell
+print(Shell().extension_version() or "")') 2>/dev/null || true
+}
+
+this_version() {
+    (cd "$repo" && python3 -c '
+import gnome_x11_touchpad_gestures
+print(gnome_x11_touchpad_gestures.__version__)')
+}
+
+# Says whether the shell has to be restarted. It loads the extension when
+# it starts, and goes on running what it loaded whatever is installed after.
+explain_extension() {
+    local loaded="$1" version="$2" changed="$3"
+    local restart="press Alt+F2, type r, press Enter. Your windows stay open."
+    if [ -z "$loaded" ]; then
+        echo "The shell has not loaded the extension. Restart the shell to load it:"
+        echo "$restart"
+        echo "Until then workspaces snap across, and glides are held back only in"
+        echo "the overview."
+    elif [ "$loaded" != "$version" ]; then
+        echo "The shell still runs version $loaded of the extension, and this is"
+        echo "$version. Restart the shell to load it:"
+        echo "$restart"
+    elif [ "$changed" = "yes" ]; then
+        echo "The extension has changed, and the shell still runs it as it was."
+        echo "Restart the shell to load it:"
+        echo "$restart"
+    else
+        echo "The shell has the extension loaded, version $loaded. No restart is needed."
+    fi
+}
+
 install_extension() {
     # Named one by one: whatever else lies in that directory, an editor's
     # backup or a note, is no part of the extension. The copy is made ready
     # beside the program, not among the extensions, where the shell would
     # take what a failed copy left behind for an extension.
     local from="$repo/extension/$extension"
+    extension_changed="yes"
+    if extension_is_installed_from "$from"; then
+        extension_changed="no"
+    fi
     put_in_place "$extensions_dir/$extension" "$program_dir/extension" \
         "$from/extension.js" "$from/gestures.js" "$from/metadata.json"
     # A shell that has not seen the extension yet cannot be asked to switch
@@ -246,9 +299,10 @@ main_as() {
     echo "The service runs that copy, so this directory can be moved or removed."
     echo "After changing the code here, run this script again to install it."
     echo
-    echo "The shell extension is loaded when GNOME Shell starts. If it is new or"
-    echo "has changed, restart the shell: press Alt+F2, type r, press Enter."
-    echo "Your windows stay open. Until then workspaces snap across as before."
+    # Asked now, not before: switching the extension on may be what made
+    # the shell load it.
+    explain_extension "$(loaded_extension_version)" "$(this_version)" \
+        "$extension_changed"
 }
 
 main() {

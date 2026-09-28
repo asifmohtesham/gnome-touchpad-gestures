@@ -801,6 +801,16 @@ The shell loads an extension when it starts, so a new or changed one needs
 the shell restarted. On X11 that keeps the windows open. `--check` reports
 which version the shell has loaded.
 
+The installer says at the end whether a restart is needed, and no longer
+advises one every time (version 0.2.1). It asks the shell, through the
+daemon's own client, which version it has loaded, once the extension is in
+place and switched on. A restart is advised if the shell has loaded none,
+if it has loaded another version, or if this install changed any of the
+extension's three files, which it finds out by comparing them before it
+copies. One case escapes it: an extension changed without a change of
+version, installed twice with no restart between. The second install
+changes nothing and finds the version it expects.
+
 ## Version numbers (added 2026-09-28)
 
 One version, written in the package's `__init__.py`. The extension's
