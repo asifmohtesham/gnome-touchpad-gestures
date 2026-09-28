@@ -237,6 +237,12 @@ Run after installing or changing a tunable.
   and `wheel`, without the word "touchpad". GNOME decides what kind of device
   something is from words in its name, and would give a "touchpad" wheel the
   touchpad's settings.
+- **Firefox: turn on "Use smooth scrolling"** in Settings, under Browsing.
+  A glide reaches Firefox as mouse-wheel input, and without smooth scrolling
+  Firefox does not render it well. Firefox turns the option off by default
+  when the desktop has animations switched off (GNOME Settings,
+  Accessibility, Reduce Animation), so it can be off without you having
+  chosen that.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
   natural scrolling is on for the touchpad and off for mice. If yours
   differ, set `NATURAL_SCROLL` in `gnome_x11_touchpad_gestures/momentum.py`.
