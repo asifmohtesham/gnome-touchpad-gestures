@@ -12,6 +12,7 @@ from gnome_x11_touchpad_gestures.momentum import Scroll
 WORKSPACE_KEYS = (e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_LEFT, e.KEY_RIGHT)
 KEY_HOLD_S = 0.01
 WHEEL_NOTCH = 120  # high-resolution units in one notch of a wheel
+GLIDE_CHECK_STEPS = 12  # a glide asks this often whether it is still wanted
 
 _ARROW = {Direction.NEXT: e.KEY_RIGHT, Direction.PREVIOUS: e.KEY_LEFT}
 
@@ -25,6 +26,8 @@ class Output:
         self._sleep = sleep
         self._rest_x = 0.0
         self._rest_y = 0.0
+        self._glide_steps = 0
+        self._held_back = False
         self._forget_scroll()
 
     def emit(self, actions: list[Action | Scroll]) -> None:
@@ -60,6 +63,17 @@ class Output:
         if first:
             # What the last glide left over belongs to that glide.
             self._forget_scroll()
+            self._glide_steps = 0
+            self._held_back = False
+        # In the overview every notch of a wheel moves one workspace along,
+        # so a glide would race through them. It is asked about now and then
+        # because the overview can open while a glide runs, and a glide once
+        # held back stays so: resuming it somewhere else would be a surprise.
+        if not self._held_back and self._glide_steps % GLIDE_CHECK_STEPS == 0:
+            self._held_back = self._shell.overview_is_open()
+        self._glide_steps += 1
+        if self._held_back:
+            return
         sideways = self._turn(e.REL_HWHEEL, e.REL_HWHEEL_HI_RES, dx)
         upright = self._turn(e.REL_WHEEL, e.REL_WHEEL_HI_RES, dy)
         if sideways or upright:

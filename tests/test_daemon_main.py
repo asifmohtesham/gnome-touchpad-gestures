@@ -122,9 +122,13 @@ def four_fingers_at(y):
 
 class FakeShell:
     requests = []
+    overview_open = False
 
     def show_overview(self, show):
         FakeShell.requests.append(show)
+
+    def overview_is_open(self):
+        return FakeShell.overview_open
 
 
 def two_fingers_at(y):
@@ -180,6 +184,7 @@ class MainTest(unittest.TestCase):
     def setUp(self):
         self.devices = {}
         FakeShell.requests = []
+        FakeShell.overview_open = False
         FakeUInput.cannot_be_created = set()
         FakeUInput.cannot_be_closed = set()
         FakeUInput.cannot_be_written = set()
@@ -273,6 +278,17 @@ class MainTest(unittest.TestCase):
         self.assertTrue(all(value > 0 for value in units))
         self.assertEqual(self.button_values(), [0])
         self.assert_everything_released_and_closed(touchpad)
+
+    def test_flick_in_the_overview_does_not_glide(self):
+        FakeShell.overview_open = True
+        touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift])
+        wake = threading.Timer(0.4, touchpad.push, [interrupt])
+        wake.start()
+        self.addCleanup(wake.cancel)
+
+        self.assertEqual(self.run_main(touchpad), 0)
+
+        self.assertEqual(self.wheel_units(), [])
 
     def test_touching_the_pad_stops_the_glide(self):
         touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift])

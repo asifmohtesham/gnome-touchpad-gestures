@@ -5,7 +5,8 @@ from evdev import ecodes as e
 from gnome_x11_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, Move, Overview, SwitchWorkspace)
 from gnome_x11_touchpad_gestures.momentum import Scroll
-from gnome_x11_touchpad_gestures.output import KEY_HOLD_S, WORKSPACE_KEYS, Output
+from gnome_x11_touchpad_gestures.output import (
+    GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, Output)
 
 SYN = "syn"
 
@@ -24,9 +25,15 @@ class FakeDevice:
 class FakeShell:
     def __init__(self):
         self.requests = []
+        self.overview_open = False
+        self.asked = 0
 
     def show_overview(self, show):
         self.requests.append(show)
+
+    def overview_is_open(self):
+        self.asked += 1
+        return self.overview_open
 
 
 def total(events, code):
@@ -174,6 +181,65 @@ class OutputTest(unittest.TestCase):
         self.wheel.events.clear()
         self.output.emit([Scroll(0.0, 30.0)])
         self.assertIn((e.EV_REL, e.REL_WHEEL, 1), self.wheel.events)
+
+    def glide(self, steps, units=40.0):
+        self.output.emit([Scroll(0.0, units, first=True)])
+        for _ in range(steps - 1):
+            self.output.emit([Scroll(0.0, units)])
+
+    def test_glide_in_the_overview_turns_no_wheel(self):
+        # There every notch of the wheel moves one workspace along.
+        self.shell.overview_open = True
+        self.glide(30)
+        self.assertEqual(self.wheel.events, [])
+
+    def test_glide_outside_the_overview_is_untouched(self):
+        self.glide(3)
+        self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), 120)
+
+    def test_overview_opening_part_way_stops_the_rest(self):
+        self.glide(GLIDE_CHECK_STEPS)
+        written = len(self.wheel.events)
+        self.assertGreater(written, 0)
+        self.shell.overview_open = True
+        for _ in range(GLIDE_CHECK_STEPS * 2):
+            self.output.emit([Scroll(0.0, 40.0)])
+        self.assertEqual(len(self.wheel.events), written)
+
+    def test_glide_held_back_stays_held_back_to_its_end(self):
+        self.shell.overview_open = True
+        self.glide(3)
+        self.shell.overview_open = False
+        for _ in range(GLIDE_CHECK_STEPS * 3):
+            self.output.emit([Scroll(0.0, 40.0)])
+        self.assertEqual(self.wheel.events, [])
+
+    def test_next_glide_is_judged_afresh(self):
+        self.shell.overview_open = True
+        self.glide(3)
+        self.shell.overview_open = False
+        self.glide(3)
+        self.assertEqual(total(self.wheel.events, e.REL_WHEEL_HI_RES), 120)
+
+    def test_shell_is_asked_now_and_then_not_at_every_step(self):
+        self.glide(GLIDE_CHECK_STEPS * 2 + 1)
+        self.assertEqual(self.shell.asked, 3)
+
+    def test_shell_is_not_asked_again_once_a_glide_is_held_back(self):
+        self.shell.overview_open = True
+        self.glide(GLIDE_CHECK_STEPS * 3)
+        self.assertEqual(self.shell.asked, 1)
+
+    def test_held_back_glide_leaves_no_part_notch_behind(self):
+        self.glide(1, units=100.0)
+        self.shell.overview_open = True
+        self.glide(2, units=100.0)
+        self.shell.overview_open = False
+        self.wheel.events.clear()
+        self.glide(1, units=30.0)
+        self.assertEqual(self.wheel.events, [
+            (e.EV_REL, e.REL_WHEEL_HI_RES, 30), SYN,
+        ])
 
     def test_release_all_drops_pending_scroll(self):
         self.output.emit([Scroll(0.0, 100.75)])
