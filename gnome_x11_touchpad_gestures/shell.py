@@ -32,6 +32,18 @@ EXTENSION_CALLS = {
     "SwipeCancel": "",
 }
 PREFIX = "gnome-x11-touchpad-gestures: "
+# What the bus calls a question that was given no answer in time.
+UNANSWERED = (
+    "org.freedesktop.DBus.Error.NoReply",
+    "org.freedesktop.DBus.Error.Timeout",
+    "org.freedesktop.DBus.Error.TimedOut",
+)
+
+
+def went_unanswered(error: Exception) -> bool:
+    """Whether the shell said nothing, as opposed to saying no."""
+    name = getattr(error, "get_dbus_name", None)
+    return name is not None and name() in UNANSWERED
 
 
 def milliseconds(t: float) -> dbus.UInt32:
@@ -62,6 +74,10 @@ class Asked:
         if self._answering:
             print(f"{PREFIX}{self._complaint}: {error}", file=sys.stderr, flush=True)
         self._answering = False
+        self.rest()
+
+    def rest(self) -> None:
+        """Not to be asked for a while, for a reason found out elsewhere."""
         self._again_at = self._clock() + SHELL_RETRY_S
 
 
@@ -95,6 +111,7 @@ class Shell:
             # Asked at every glide, so a desktop without this shell would
             # fill the log. Said once, and again only if it had recovered.
             self._overview.failed(error)
+            self._spare(self._extension, error)
             return False
         self._overview.answered()
         return bool(answer)
@@ -129,9 +146,20 @@ class Shell:
                 EXTENSION_CALLS[method], args, timeout=OVERVIEW_TIMEOUT_S)
         except Exception as error:
             self._extension.failed(error)
+            self._spare(self._overview, error)
             return None
         self._extension.answered()
         return answer
+
+    def _spare(self, other: Asked, error: Exception) -> None:
+        """Leaves the other question unasked if the shell said nothing.
+
+        The extension answers on the shell's own connection, so a question
+        that went unanswered is word about both, and the other would hold
+        the daemon up just as long for nothing.
+        """
+        if went_unanswered(error):
+            other.rest()
 
     def _tell(self, method: str, *args) -> None:
         """Sent without waiting for an answer.
