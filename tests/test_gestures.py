@@ -187,6 +187,13 @@ class HeldSwipeTest(unittest.TestCase):
         self.assertAlmostEqual(self.machine.next_deadline(),
                                0.02 + g.SWIPE_KEEPALIVE_S)
 
+    def test_swipe_held_from_the_moment_it_began_is_due_to_report(self):
+        machine = GestureMachine()
+        raw(machine, [(0.00, 4, 60.0, 25.0), (0.01, 4, 50.0, 25.0)])
+        self.assertAlmostEqual(machine.next_deadline(), 0.01 + g.SWIPE_KEEPALIVE_S)
+        due = machine.next_deadline()
+        self.assertEqual(machine.tick(due), [SwipeMove(due, 0.0)])
+
     def test_nothing_is_said_before_it_is_due(self):
         self.assertEqual(self.machine.tick(0.02 + g.SWIPE_KEEPALIVE_S - 0.01), [])
 
