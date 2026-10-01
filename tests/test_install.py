@@ -916,6 +916,101 @@ class RestartAdviceTest(unittest.TestCase):
         script = (INSTALL / "install.sh").read_text()
         self.assertIn("extension_version()", script)
 
+    LOG_OUT = "Log out and log back in"
+
+    def advice_on_wayland(self, loaded, version, changed):
+        result = call("install.sh", "explain_extension", loaded, version,
+                      changed, "wayland")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
+        return result.stdout
+
+    def test_on_wayland_the_shell_cannot_be_restarted_so_logging_out_is_advised(self):
+        for loaded, changed in (("", "yes"), ("0.2.0", "no"), ("0.2.1", "yes")):
+            with self.subTest(loaded=loaded, changed=changed):
+                said = self.advice_on_wayland(loaded, "0.2.1", changed)
+                self.assertIn(self.LOG_OUT, said)
+                self.assertNotIn(self.RESTART, said)
+                self.assertNotIn("windows stay open", said)
+
+    def test_on_wayland_an_extension_not_loaded_costs_the_drag(self):
+        said = self.advice_on_wayland("", "0.2.1", "yes")
+        self.assertIn("has not loaded", said)
+        self.assertIn("three-finger drag", said)
+        self.assertNotIn("snap", said)
+        self.assertNotIn("glides", said)
+
+    def test_on_wayland_too_an_extension_loaded_as_installed_needs_nothing(self):
+        said = self.advice_on_wayland("0.2.1", "0.2.1", "no")
+        self.assertIn("No restart is needed", said)
+        self.assertNotIn(self.LOG_OUT, said)
+
+    def test_every_other_session_is_advised_as_x11_was(self):
+        for session in ("x11", "", "tty"):
+            with self.subTest(session=session):
+                result = call("install.sh", "explain_extension", "", "0.2.1",
+                              "yes", session)
+                self.assertIn(self.RESTART, result.stdout)
+                self.assertIn("snap", result.stdout)
+
+    def installed_in(self, session):
+        said = 'export XDG_SESSION_TYPE="$1"; ' if session is not None else ""
+        shell = 'loaded_extension_version() { echo ""; }; '
+        with recording_sandbox() as (_, run, _commands):
+            result = run("install.sh", said + self.ACCESS + shell + "main_as 1000",
+                         *([session] if session is not None else []))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout, result.stderr
+
+    def test_install_on_wayland_advises_logging_out_and_warns_of_nothing(self):
+        said, warned = self.installed_in("wayland")
+        self.assertIn(self.LOG_OUT, said)
+        self.assertNotIn(self.RESTART, said)
+        self.assertNotIn("not x11", warned)
+        self.assertEqual(warned, "")
+        self.assertNotIn("has not started", said)
+
+    def test_install_on_x11_warns_of_nothing_either(self):
+        said, warned = self.installed_in("x11")
+        self.assertIn(self.RESTART, said)
+        self.assertEqual(warned, "")
+        self.assertNotIn("has not started", said)
+
+    def test_install_in_any_other_session_says_where_the_service_starts(self):
+        for session in ("tty", None):
+            with self.subTest(session=session):
+                said, warned = self.installed_in(session)
+                self.assertIn("X11", warned)
+                self.assertIn("Wayland", warned)
+                self.assertIn("has not started", said)
+                self.assertIn("X11 or Wayland", said)
+
+
+class WhatIsSaidTest(unittest.TestCase):
+    """Statements that were true of X11 alone and are easy to leave behind."""
+
+    def setUp(self):
+        self.readme = " ".join((REPO / "README.md").read_text().split())
+
+    def test_readme_says_the_service_starts_in_either_session(self):
+        self.assertNotIn("only if that session is X11.", self.readme)
+        self.assertIn("only if that session is X11 or Wayland.", self.readme)
+
+    def test_readme_does_not_play_down_the_rule_where_it_is_news(self):
+        # On X11 any program can type and click already. On Wayland it cannot.
+        self.assertIn("On Wayland no program can", self.readme)
+
+    def test_readme_says_what_happens_in_a_shell_the_drag_was_not_tried_in(self):
+        self.assertIn("frees nothing", self.readme)
+
+    def test_changelog_does_not_say_that_nothing_at_all_changed_on_x11(self):
+        changelog = (REPO / "CHANGELOG.md").read_text()
+        self.assertNotIn("On X11 nothing has changed.", changelog)
+
+    def test_installer_does_not_say_every_gesture_works_without_the_extension(self):
+        script = (INSTALL / "install.sh").read_text()
+        self.assertNotIn("Without it the gestures still work", script)
+
 
 class InstalledFilesTest(unittest.TestCase):
     def test_rule_leaves_anything_that_is_also_a_keyboard_alone(self):
@@ -939,9 +1034,22 @@ class InstalledFilesTest(unittest.TestCase):
         self.assertIn('ENV{ID_INPUT_TOUCHPAD}=="1"', active[0])
         self.assertNotIn("ATTRS{name}", rule)
 
-    def test_service_runs_in_an_x11_session_only(self):
+    def test_service_starts_in_an_x11_or_a_wayland_session_and_no_other(self):
         unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
-        self.assertIn("ConditionEnvironment=XDG_SESSION_TYPE=x11", unit)
+        conditions = [line for line in unit.splitlines()
+                      if line.startswith("ConditionEnvironment=")]
+        # The bar makes each a condition of which one is enough.
+        self.assertEqual(conditions, [
+            "ConditionEnvironment=|XDG_SESSION_TYPE=x11",
+            "ConditionEnvironment=|XDG_SESSION_TYPE=wayland"])
+
+    def test_service_does_not_promise_what_one_mode_lacks(self):
+        unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
+        (description,) = [line for line in unit.splitlines()
+                          if line.startswith("Description=")]
+        self.assertIn("three-finger drag", description)
+        self.assertNotIn("momentum", description)
+        self.assertNotIn("four-finger", description)
 
     def test_installer_names_each_missing_python_package(self):
         result = call("install.sh", "missing_packages", "evdev", "dbus",

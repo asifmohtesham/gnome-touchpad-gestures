@@ -65,11 +65,11 @@ class MetadataTest(unittest.TestCase):
         for version in versions:
             self.assertRegex(version, r"^\d+$")
 
-    def test_only_the_shell_it_was_written_against_is_named(self):
-        # It works on parts of the shell that are the shell's own business
-        # and may change with any version. A version is named here once the
-        # extension has been seen to work in it, and not before.
-        self.assertEqual(self.metadata["shell-version"], ["46"])
+    def test_only_the_shells_it_was_seen_to_work_in_are_named(self):
+        # 46 for X11, where it works on parts of the shell that are the
+        # shell's own business. 50 for Wayland. A version is named here
+        # once the extension has been seen to work in it, and not before.
+        self.assertEqual(self.metadata["shell-version"], ["46", "50"])
 
     def test_it_is_not_loaded_on_the_lock_screen(self):
         # Nothing there is to be swiped or scrolled, and an extension has

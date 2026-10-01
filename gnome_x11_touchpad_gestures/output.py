@@ -149,3 +149,45 @@ class Output:
         for key in reversed(keys):
             self._keyboard.write(e.EV_KEY, key, 0)
             self._keyboard.syn()
+
+
+class NoDevice:
+    """Stands in for a virtual device that a mode does not make."""
+
+    def write(self, etype: int, code: int, value: int) -> None:
+        pass
+
+    def syn(self) -> None:
+        pass
+
+
+class DragOnly:
+    """Carries out the drag and nothing else, and only where it may.
+
+    For a desktop that does the other gestures itself. Its own swipe of
+    three fingers would land on top of a drag, so a drag is made only if
+    `allowed()` says, as the drag starts, that the desktop is keeping its
+    swipes off three fingers. A drag it does not allow is dropped whole:
+    its press, its moves and its release.
+    """
+
+    def __init__(self, output: Output, allowed) -> None:
+        self._output = output
+        self._allowed = allowed
+        self._dragging = False
+
+    def emit(self, actions: list[Action | Scroll]) -> None:
+        kept = []
+        for action in actions:
+            if isinstance(action, ButtonDown):
+                self._dragging = bool(self._allowed())
+            if self._dragging and isinstance(action, (ButtonDown, Move, ButtonUp)):
+                kept.append(action)
+            if isinstance(action, ButtonUp):
+                self._dragging = False
+        if kept:
+            self._output.emit(kept)
+
+    def release_all(self) -> None:
+        self._dragging = False
+        self._output.release_all()

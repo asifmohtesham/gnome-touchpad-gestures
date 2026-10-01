@@ -1,8 +1,11 @@
 [Unit]
-Description=Touchpad gestures: three-finger drag, four-finger swipes, momentum scrolling
+Description=Touchpad gestures: three-finger drag, and on X11 the gestures GNOME lacks there
 PartOf=graphical-session.target
-# GNOME on Wayland has gestures of its own, and these would fight them.
-ConditionEnvironment=XDG_SESSION_TYPE=x11
+# On X11 the daemon does every gesture. On Wayland GNOME has gestures of its
+# own, and the daemon does the one it lacks: three-finger drag. The bar
+# makes each a condition of which one is enough.
+ConditionEnvironment=|XDG_SESSION_TYPE=x11
+ConditionEnvironment=|XDG_SESSION_TYPE=wayland
 After=graphical-session.target
 
 [Service]

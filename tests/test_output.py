@@ -7,7 +7,7 @@ from gnome_x11_touchpad_gestures.gestures import (
     SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
 from gnome_x11_touchpad_gestures.momentum import Scroll
 from gnome_x11_touchpad_gestures.output import (
-    GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, Output)
+    GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, DragOnly, NoDevice, Output)
 
 SYN = "syn"
 
@@ -371,6 +371,125 @@ class OutputTest(unittest.TestCase):
             (e.EV_REL, e.REL_WHEEL_HI_RES, 30), SYN,
         ])
 
+
+class DragOnlyTest(unittest.TestCase):
+    """Where the desktop does the other gestures itself, only the drag is
+    carried out, and only when the extension has freed three fingers."""
+
+    PRESS = [(e.EV_KEY, e.BTN_LEFT, 1), SYN]
+    RELEASE = [(e.EV_KEY, e.BTN_LEFT, 0), SYN]
+
+    def setUp(self):
+        self.pointer = FakeDevice()
+        self.shell = FakeShell()
+        self.answers = []
+        self.asked = 0
+        self.drag = DragOnly(
+            Output(self.pointer, NoDevice(), NoDevice(), self.shell,
+                   sleep=lambda seconds: None),
+            self.allowed)
+
+    def allowed(self):
+        self.asked += 1
+        return self.answers.pop(0) if self.answers else True
+
+    def test_drag_is_carried_out(self):
+        self.drag.emit([ButtonDown()])
+        self.drag.emit([Move(12.0, 0.0)])
+        self.drag.emit([ButtonUp()])
+        self.assertEqual(
+            self.pointer.events,
+            self.PRESS + [(e.EV_REL, e.REL_X, 12), SYN] + self.RELEASE)
+
+    def test_everything_else_is_left_to_the_desktop(self):
+        self.drag.emit([
+            SwitchWorkspace(Direction.NEXT), Overview(show=True),
+            SwipeBegin(1.0, travel=-5.0), SwipeMove(1.01, -20.0),
+            SwipeEnd(1.2), SwipeCancel(), Scroll(0.0, 400.0, first=True)])
+        self.assertEqual(self.pointer.events, [])
+        self.assertEqual(self.shell.requests, [])
+        self.assertEqual(self.shell.swipes, [])
+        self.assertEqual(self.shell.asked, 0)
+
+    def test_drag_the_extension_did_not_agree_to_is_dropped_whole(self):
+        self.answers = [False]
+        self.drag.emit([ButtonDown()])
+        self.drag.emit([Move(12.0, 0.0)])
+        self.drag.emit([ButtonUp()])
+        self.assertEqual(self.pointer.events, [])
+
+    def test_extension_is_asked_once_for_each_drag(self):
+        self.drag.emit([ButtonDown(), Move(5.0, 0.0), Move(5.0, 0.0), ButtonUp()])
+        self.assertEqual(self.asked, 1)
+        self.drag.emit([ButtonDown(), ButtonUp()])
+        self.assertEqual(self.asked, 2)
+
+    def test_it_is_not_asked_about_anything_but_a_drag(self):
+        self.drag.emit([Move(5.0, 0.0), ButtonUp(), Overview(show=True)])
+        self.assertEqual(self.asked, 0)
+
+    def test_drag_after_a_refused_one_is_asked_about_afresh(self):
+        self.answers = [False, True]
+        self.drag.emit([ButtonDown(), Move(5.0, 0.0), ButtonUp()])
+        self.drag.emit([ButtonDown(), ButtonUp()])
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+
+    def test_answer_need_only_be_true_or_false_in_spirit(self):
+        self.answers = [None]
+        self.drag.emit([ButtonDown(), ButtonUp()])
+        self.assertEqual(self.pointer.events, [])
+
+    def test_release_without_a_press_writes_nothing(self):
+        self.drag.emit([ButtonUp()])
+        self.drag.emit([Move(5.0, 0.0)])
+        self.assertEqual(self.pointer.events, [])
+
+    def test_fourth_finger_ends_the_drag_and_the_swipe_is_the_desktop_s(self):
+        # What the gesture machine makes of a fourth finger landing.
+        self.drag.emit([ButtonDown()])
+        self.drag.emit([ButtonUp()])
+        self.drag.emit([SwipeBegin(1.0, travel=-6.0), SwipeMove(1.01, -9.0)])
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+        self.assertEqual(self.shell.swipes, [])
+
+    def test_nothing_else_gets_through_in_the_middle_of_a_drag_either(self):
+        self.drag.emit([ButtonDown()])
+        self.drag.emit([Overview(show=True), SwitchWorkspace(Direction.NEXT),
+                        SwipeBegin(1.0), SwipeMove(1.01, -20.0),
+                        Scroll(0.0, 400.0, first=True)])
+        self.assertEqual(self.pointer.events, self.PRESS)
+        self.assertEqual(self.shell.requests, [])
+        self.assertEqual(self.shell.swipes, [])
+        self.assertEqual(self.shell.asked, 0)
+
+    def test_moves_after_a_drag_has_ended_are_not_a_drag(self):
+        self.drag.emit([ButtonDown(), ButtonUp()])
+        self.drag.emit([Move(50.0, 0.0)])
+        self.drag.emit([ButtonUp()])
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+
+    def test_release_all_lets_go_of_the_button(self):
+        self.drag.emit([ButtonDown()])
+        self.drag.release_all()
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+
+    def test_moves_after_release_all_are_not_a_drag(self):
+        self.drag.emit([ButtonDown()])
+        self.drag.release_all()
+        self.drag.emit([Move(50.0, 0.0), ButtonUp()])
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+
+    def test_release_all_needs_no_keyboard_or_wheel(self):
+        self.drag.release_all()
+        self.assertEqual(self.pointer.events, self.RELEASE)
+        self.assertEqual(self.shell.swipes, [])
+
+
+class NoDeviceTest(unittest.TestCase):
+    def test_it_takes_what_a_device_takes_and_does_nothing(self):
+        device = NoDevice()
+        self.assertIsNone(device.write(e.EV_KEY, e.KEY_LEFTCTRL, 0))
+        self.assertIsNone(device.syn())
 
 if __name__ == "__main__":
     unittest.main()

@@ -828,6 +828,14 @@ uninstall. The installer and the uninstaller therefore remove all three.
 The old rule is a reason to ask for a password even when the new one is
 already in place. This is the only place the former name is still written.
 
+## A second mode, for Wayland (added 2026-10-02, version 0.3.0)
+
+Everything above is the X11 mode. On GNOME on Wayland the daemon does
+three-finger drag and nothing else, and the extension keeps the shell's
+swipes off three fingers for it. That mode has a design of its own:
+`2026-10-02-wayland-drag-mode-design.md`. "Wayland" under Out of scope
+below means the gestures of this document, which GNOME has itself there.
+
 ## Out of scope
 
 Configuration file, an overview that

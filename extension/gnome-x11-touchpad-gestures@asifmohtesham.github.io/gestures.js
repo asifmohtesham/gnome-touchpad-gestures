@@ -152,3 +152,57 @@ export function isOverWindow(actor, windowGroups, overviewVisible, stage) {
     }
     return false;
 }
+
+// How many fingers drag. A swipe of this many is the daemon's.
+export const DRAG_FINGERS = 3;
+
+// Decides which touchpad swipes the shell is not to see.
+//
+// Where the daemon drags with three fingers, the shell's own swipes, which
+// it makes of three fingers or more, would land on top of the drag. They
+// are kept from it for as long as the daemon is there.
+//
+// A swipe is a run of events: a begin, updates, an end. It is swallowed
+// whole or not at all, and that is decided at its begin. A daemon that
+// came or went in the middle would otherwise leave the shell with half a
+// swipe: a begin without an end, and a workspace stuck part way across.
+export class SwipeFilter {
+    constructor() {
+        this._swallowing = false;
+    }
+
+    // `phase` is 'begin', 'update' or 'end'. Whether to swallow the event.
+    handle(phase, fingers, daemonPresent) {
+        if (phase === 'begin')
+            this._swallowing = fingers === DRAG_FINGERS && daemonPresent === true;
+        const swallow = this._swallowing;
+        if (phase === 'end')
+            this._swallowing = false;
+        return swallow;
+    }
+}
+
+// The versions of the shell in which keeping its swipes from it, as
+// extension.js does on Wayland, has been seen to work.
+const WAYLAND_SHELLS = [50];
+
+// Whether to free three fingers in this version of the shell. Where it was
+// never tried, they are left as the shell has them: an older shell handles
+// a swipe before an extension can see it, and swallowing it too late would
+// let the shell's swipe land on a drag with the button held.
+export function freesThreeFingersOn(version) {
+    if (typeof version !== 'string')
+        return false;
+    const major = /^(\d+)(\.|$)/.exec(version);
+    return major !== null && WAYLAND_SHELLS.includes(Number(major[1]));
+}
+
+// Whether the shell runs a Wayland session. `meta` is the shell's Meta.
+// A shell that still has an X11 session can say. From GNOME 50 there is
+// none, and the call that said went with it: a shell that cannot be asked
+// runs Wayland.
+export function isWaylandShell(meta) {
+    if (typeof meta.is_wayland_compositor !== 'function')
+        return true;
+    return meta.is_wayland_compositor() === true;
+}
