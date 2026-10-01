@@ -136,9 +136,11 @@ stand-in had offered and the real shell did not.)
 
 ### Swallowing a swipe
 
-The extension connects to `captured-event::touchpad` on the stage, which
-runs before the shell's own swipe handling, and returns "stop" for the
-events to be swallowed. Only the public event calls are used:
+The extension puts an action on the stage in the capture phase, which
+runs before the shell's own swipe handling, and has it handle the events
+to be swallowed. (At first it connected a handler to
+`captured-event::touchpad`; see the change in 0.3.1 below.) Only the public
+event calls are used:
 `type()`, `get_touchpad_gesture_finger_count()`, `get_gesture_phase()`.
 
 (Changed in 0.3.1.) The handler on the stage was the wrong tool. While a
@@ -162,8 +164,17 @@ happened to the daemon since. Otherwise a daemon that started or stopped
 in the middle of a swipe would leave the shell with half of one: a begin
 without an end, and a workspace stuck part way across.
 
-An event of a swipe whose begin was not seen, as when the extension is
-enabled in the middle of one, is not swallowed.
+(Changed in 0.4.1.) A swipe whose begin was not seen is decided where it
+is first seen, by the same rule. At first it was let through. But while
+another actor holds a grab, the shell's own drag of a window in the
+overview for one, events do not pass the stage; a swipe that began then
+could reach the shell from the middle, and the shell starts a swipe of its
+own from any update. Found by the seventh review; not seen in use.
+
+(Also 0.4.1.) `enable()` exports the object on the bus before it sets
+anything else up. The shell does not call `disable()` on an extension whose
+`enable()` threw, and the export is the step that can throw: an action
+already on the stage would have gone on swallowing.
 
 A swipe of four fingers or more is never swallowed. Pinch and hold
 gestures are not swipes and are never looked at.
@@ -172,12 +183,12 @@ gestures are not swipes and are never looked at.
 
 `Gio.bus_watch_name_on_connection` on the session bus, for the daemon's
 name. The watch is set up in `enable()` and taken down in `disable()`,
-along with the handler on the stage.
+along with the action on the stage.
 
 ### Where this goes in the code
 
 - `gestures.js`: a class `SwipeFilter`, pure, with
-  `handle(isSwipe, phase, fingers, daemonPresent)` returning whether to
+  `handle(phase, fingers, daemonPresent)` returning whether to
   swallow. Tested with gjs like the rest of that file.
 - `extension.js`: the glue. It imports `gi://Meta` as well.
 - `metadata.json`: `"shell-version": ["46", "50"]`. The Wayland behaviour

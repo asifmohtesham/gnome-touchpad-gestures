@@ -100,6 +100,9 @@ def as_on_wayland(bus, control, seen):
     seen["two fingers"] = swipe(2)
     seen["pinch"] = bool(control("Pinch"))
     seen["cancelled"] = [one("begin"), one("cancel"), one("update")]
+    one("end")
+    seen["swipe after the stray one"] = swipe()
+    seen["seen from the middle"] = [one("update"), one("end")]
     seen["unknown phase"] = [one("begin"), one("unknown"), one("end")]
     seen["broken event"] = bool(control("Broken"))
     seen["swipe after a broken event"] = swipe()
@@ -124,6 +127,11 @@ def as_on_wayland(bus, control, seen):
     asked.swipe_update(12.507, 0.25)
     asked.swipe_end(12.6)
     asked.swipe_cancel()
+
+    seen["second enable threw"] = bool(control("EnableAgain"))
+    seen["handlers after a failed enable"] = int(control("Handlers"))
+    seen["watches after a failed enable"] = int(control("Watches"))
+    seen["swipe after a failed enable"] = swipe()
 
     control("Disable")
     seen["handlers once off"] = int(control("Handlers"))

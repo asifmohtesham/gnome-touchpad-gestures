@@ -4,6 +4,26 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
+## 0.4.1 (2026-10-02)
+
+Fixes from an independent review of 0.3.0 to 0.4.0. None was seen in use.
+
+Fixed
+- On Wayland, a three-finger swipe that began while GNOME held a grab of
+  its own, such as its drag of a window in the overview, could reach GNOME
+  from the middle and start a workspace swipe under a held button. Such a
+  swipe is now kept from GNOME from where it is first seen.
+- If the extension failed part way through being switched on, it could
+  leave three-finger swipes swallowed. It now sets nothing up until the
+  step that can fail has passed.
+- The tests that run the extension look for GNOME Shell's Clutter library
+  in more places, and pick the newest by number.
+
+Upgrading from before 0.4.0: the extension has a new name, so between
+installing and logging out (on X11, restarting the shell) there is no
+three-finger drag on Wayland. The installer says so; the entry for 0.4.0
+did not.
+
 ## 0.4.0 (2026-10-02)
 
 Changed

@@ -30,8 +30,29 @@ NEEDED = ("gjs", "dbus-run-session")
 # Clutter is the shell's own and is found only where the shell keeps it.
 # The extension is run against the real one: what it builds on Clutter,
 # an action with a handler of its own, cannot be stood in for.
-CLUTTER = sorted(pathlib.Path("/usr/lib").glob("*/mutter-*/Clutter-*.typelib"))
-RUNNABLE = all(shutil.which(tool) for tool in NEEDED) and bool(CLUTTER)
+def mutter_version(typelib):
+    """The number in the name of the directory the shell keeps it in."""
+    digits = "".join(ch for ch in typelib.parent.name if ch.isdigit())
+    return int(digits or 0)
+
+
+def newest(typelibs):
+    """The one of the newest mutter, or None. 14 is newer than 9."""
+    return max(typelibs, key=mutter_version, default=None)
+
+
+def clutter_typelibs(roots=("/usr/lib", "/usr/lib64")):
+    """Wherever distributions keep it: with or without a directory for the
+    machine's architecture in between."""
+    found = []
+    for root in roots:
+        for pattern in ("mutter-*/Clutter-*.typelib", "*/mutter-*/Clutter-*.typelib"):
+            found += pathlib.Path(root).glob(pattern)
+    return found
+
+
+CLUTTER = newest(clutter_typelibs())
+RUNNABLE = all(shutil.which(tool) for tool in NEEDED) and CLUTTER is not None
 WHY_NOT = "needs gjs, dbus-run-session and the shell's Clutter"
 
 
@@ -60,7 +81,7 @@ def run_extension(mode, shell="50.1"):
         # Keeps gjs from starting the desktop's file services on a bus
         # that is about to go away.
         environment["GIO_USE_VFS"] = "local"
-        where = str(CLUTTER[-1].parent)
+        where = str(CLUTTER.parent)
         environment["GI_TYPELIB_PATH"] = where
         environment["LD_LIBRARY_PATH"] = where
         result = subprocess.run(
@@ -207,7 +228,23 @@ class OnWaylandTest(Ran):
         self.assertIs(self.seen["pinch"], False)
 
     def test_cancelled_swipe_is_over(self):
-        self.assertEqual(self.seen["cancelled"], [True, True, False])
+        # What follows a cancel is a swipe of its own, first seen in the
+        # middle, and with the daemon there it is swallowed too.
+        self.assertEqual(self.seen["cancelled"], [True, True, True])
+        self.assertEqual(self.seen["swipe after the stray one"], self.WHOLE)
+
+    def test_swipe_first_seen_in_the_middle_is_swallowed(self):
+        self.assertEqual(self.seen["seen from the middle"], [True, True])
+
+    def test_enabling_it_twice_fails_and_leaves_nothing_behind(self):
+        # The shell does not call disable() on an extension whose enable()
+        # threw. An action left on the stage would go on swallowing.
+        self.assertIs(self.seen["second enable threw"], True)
+        self.assertEqual(self.seen["handlers after a failed enable"], 1)
+        self.assertEqual(self.seen["watches after a failed enable"], 1)
+        self.assertEqual(self.seen["swipe after a failed enable"], self.WHOLE)
+        self.assertEqual(self.seen["handlers once off"], 0)
+        self.assertEqual(self.seen["watches once off"], 0)
 
     def test_phase_it_does_not_know_follows_the_swipe_it_is_in(self):
         self.assertEqual(self.seen["unknown phase"], self.WHOLE)
@@ -278,6 +315,43 @@ class OnWaylandInAnotherShellTest(Ran):
         self.assertIs(self.seen["begin"], False)
         self.assertIs(self.seen["over window"], False)
         self.assertEqual(self.seen["calls"], [])
+
+
+class FindingClutterTest(unittest.TestCase):
+    def found(self, *paths):
+        with tempfile.TemporaryDirectory() as root:
+            for path in paths:
+                file = pathlib.Path(root) / path
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.touch()
+            return sorted(str(p.relative_to(root)) for p in clutter_typelibs(
+                (f"{root}/lib", f"{root}/lib64")))
+
+    def test_it_is_found_under_a_directory_for_the_architecture(self):
+        self.assertEqual(
+            self.found("lib/x86_64-linux-gnu/mutter-18/Clutter-18.typelib"),
+            ["lib/x86_64-linux-gnu/mutter-18/Clutter-18.typelib"])
+
+    def test_it_is_found_without_one_and_under_lib64(self):
+        self.assertEqual(
+            self.found("lib64/mutter-17/Clutter-17.typelib",
+                       "lib/mutter-16/Clutter-16.typelib",
+                       "lib/mutter-16/Meta-16.typelib"),
+            ["lib/mutter-16/Clutter-16.typelib", "lib64/mutter-17/Clutter-17.typelib"])
+
+    def test_newest_is_by_number_not_by_spelling(self):
+        old = pathlib.Path("/usr/lib/a/mutter-9/Clutter-9.typelib")
+        new = pathlib.Path("/usr/lib/a/mutter-14/Clutter-14.typelib")
+        self.assertEqual(newest([new, old]), new)
+        self.assertEqual(newest([old, new]), new)
+
+    def test_none_is_none(self):
+        self.assertIsNone(newest([]))
+
+    def test_this_machine_s_is_found(self):
+        if not shutil.which("gnome-shell"):
+            self.skipTest("no GNOME Shell here")
+        self.assertIsNotNone(CLUTTER)
 
 
 class StandInsTest(unittest.TestCase):
