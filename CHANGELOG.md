@@ -4,6 +4,14 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
+## 0.3.1 (unreleased)
+
+Fixed
+- On Wayland, dragging a window with three fingers inside the Activities
+  overview mostly did nothing. The extension kept GNOME's swipes from it
+  in a way that, while the button was held, made GNOME cancel its own drag
+  of the window. It now keeps them from it in a way that cancels nothing.
+
 ## 0.3.0 (2026-10-02)
 
 Added

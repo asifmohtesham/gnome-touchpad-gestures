@@ -21,13 +21,18 @@ import gnome_x11_touchpad_gestures
 REPO = pathlib.Path(__file__).resolve().parent.parent
 UUID = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
 IMPORTS = {
-    "'gi://Clutter'": "'./stand_in_clutter.js'",
     "'gi://Meta'": "'./stand_in_meta.js'",
     "'resource:///org/gnome/shell/misc/config.js'": "'./stand_in_config.js'",
     "'resource:///org/gnome/shell/extensions/extension.js'": "'./stand_in_extension.js'",
     "'resource:///org/gnome/shell/ui/main.js'": "'./stand_in_main.js'",
 }
 NEEDED = ("gjs", "dbus-run-session")
+# Clutter is the shell's own and is found only where the shell keeps it.
+# The extension is run against the real one: what it builds on Clutter,
+# an action with a handler of its own, cannot be stood in for.
+CLUTTER = sorted(pathlib.Path("/usr/lib").glob("*/mutter-*/Clutter-*.typelib"))
+RUNNABLE = all(shutil.which(tool) for tool in NEEDED) and bool(CLUTTER)
+WHY_NOT = "needs gjs, dbus-run-session and the shell's Clutter"
 
 
 def copy_with_stand_ins(directory):
@@ -38,10 +43,9 @@ def copy_with_stand_ins(directory):
         assert source.count(real) == 1, real
         source = source.replace(real, stand_in)
     assert "resource:///org/gnome/shell" not in source, "an import without a stand-in"
-    assert "gi://Clutter" not in source, "an import without a stand-in"
     assert "gi://Meta" not in source, "an import without a stand-in"
     (pathlib.Path(directory) / "extension.js").write_text(source)
-    for name in ("clutter", "config", "extension", "main", "meta"):
+    for name in ("config", "extension", "main", "meta"):
         shutil.copy(REPO / "tests/js/stand_ins" / f"{name}.js",
                     pathlib.Path(directory) / f"stand_in_{name}.js")
 
@@ -56,6 +60,9 @@ def run_extension(mode, shell="50.1"):
         # Keeps gjs from starting the desktop's file services on a bus
         # that is about to go away.
         environment["GIO_USE_VFS"] = "local"
+        where = str(CLUTTER[-1].parent)
+        environment["GI_TYPELIB_PATH"] = where
+        environment["LD_LIBRARY_PATH"] = where
         result = subprocess.run(
             ["dbus-run-session", "--", sys.executable,
              str(REPO / "tests/helpers/drive_extension.py"), directory,
@@ -79,8 +86,7 @@ class Ran(unittest.TestCase):
             self.fail(self.failure)
 
 
-@unittest.skipUnless(all(shutil.which(tool) for tool in NEEDED),
-                     "needs gjs and dbus-run-session")
+@unittest.skipUnless(RUNNABLE, WHY_NOT)
 class ExtensionRunsTest(Ran):
     MODE = "x11"
     SHELL = "46.0"
@@ -155,8 +161,7 @@ class ExtensionRunsTest(Ran):
         self.assertEqual(self.seen["three fingers"], [False, False, False])
 
 
-@unittest.skipUnless(all(shutil.which(tool) for tool in NEEDED),
-                     "needs gjs and dbus-run-session")
+@unittest.skipUnless(RUNNABLE, WHY_NOT)
 class OnWaylandTest(Ran):
     """Where the daemon only drags, the extension keeps the shell's swipes
     off three fingers for as long as the daemon is there."""
@@ -172,8 +177,10 @@ class OnWaylandTest(Ran):
     def test_it_tells_its_version(self):
         self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
 
-    def test_it_listens_on_the_stage_once(self):
+    def test_it_puts_one_action_on_the_stage_and_connects_no_handler(self):
+        # A handler would have thrown in the runner, and shown as a complaint.
         self.assertEqual(self.seen["handlers"], 1)
+        self.assertEqual(self.seen["runner complaints"], "")
 
     def test_it_watches_the_bus_once_and_leaves_no_watch_behind(self):
         self.assertEqual(self.seen["watches"], 1)
@@ -239,8 +246,7 @@ class OnWaylandTest(Ran):
         self.assertEqual(self.seen["swipe once on again"], self.WHOLE)
 
 
-@unittest.skipUnless(all(shutil.which(tool) for tool in NEEDED),
-                     "needs gjs and dbus-run-session")
+@unittest.skipUnless(RUNNABLE, WHY_NOT)
 class OnWaylandInAnotherShellTest(Ran):
     """The swallowing was seen to work in one version of the shell. In any
     other, three fingers are left as the shell has them, and the daemon,
@@ -280,7 +286,7 @@ class StandInsTest(unittest.TestCase):
             copy_with_stand_ins(directory)
             files = sorted(p.name for p in pathlib.Path(directory).iterdir())
         self.assertEqual(files, ["extension.js", "gestures.js", "metadata.json",
-                                 "stand_in_clutter.js", "stand_in_config.js",
+                                 "stand_in_config.js",
                                  "stand_in_extension.js", "stand_in_main.js",
                                  "stand_in_meta.js"])
 

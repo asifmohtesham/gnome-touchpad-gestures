@@ -11,20 +11,23 @@ import System from 'system';
 
 const directory = ARGV[0];
 const Main = await import(`file://${directory}/stand_in_main.js`);
-const {default: Clutter} = await import(`file://${directory}/stand_in_clutter.js`);
+// The real one, so that what the extension builds on it is really built.
+const {default: Clutter} = await import('gi://Clutter');
 const Meta = await import(`file://${directory}/stand_in_meta.js`);
 const Config = await import(`file://${directory}/stand_in_config.js`);
 Config.setVersion(ARGV[2]);
 // Shells from 50 on have no X11 session and cannot be asked which they run.
 Meta.setSession(ARGV[1] === 'wayland', parseInt(ARGV[2]) < 50);
 
-// What is connected to the stage, so that events can be put through it.
-const handlers = new Map();
-let nextHandler = 1;
+// The actions put on the stage, so that events can be put through them as
+// the shell puts them: those of the capture phase first, and an action
+// that handles an event ends the matter.
+const actions = [];
 
 function through(event) {
-    for (const {signal, handler} of handlers.values()) {
-        if (signal === 'captured-event::touchpad' && handler(stage, event) === true)
+    for (const {phase, action} of actions) {
+        if (phase === Clutter.EventPhase.CAPTURE &&
+            action.vfunc_handle_event(event) === true)
             return true;
     }
     return false;
@@ -59,13 +62,22 @@ globalThis.global = {
             picks.push([mode, x, y]);
             return under[picked];
         },
-        connect(signal, handler) {
-            handlers.set(nextHandler, {signal, handler});
-            return nextHandler++;
+        add_action_full(name, phase, action) {
+            if (!(action instanceof Clutter.Action))
+                throw new Error('not an action');
+            actions.push({name, phase, action});
         },
-        disconnect(id) {
-            if (!handlers.delete(id))
-                throw new Error(`no handler ${id} to disconnect`);
+        remove_action(action) {
+            const at = actions.findIndex(entry => entry.action === action);
+            if (at < 0)
+                throw new Error('no such action to remove');
+            actions.splice(at, 1);
+        },
+        // A handler on the stage that stops an event while a button is held
+        // makes the shell cancel every gesture under way, a window being
+        // dragged in the overview for one. Nothing is to be connected here.
+        connect(signal) {
+            throw new Error(`a handler for ${signal} was connected to the stage`);
         },
     }),
     window_group: windowGroup,
@@ -160,7 +172,7 @@ const control = Gio.DBusExportedObject.wrapJSObject(CONTROL, {
         });
     },
     Handlers() {
-        return handlers.size;
+        return actions.length;
     },
     Watches() {
         return watches;
