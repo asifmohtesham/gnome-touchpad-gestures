@@ -366,6 +366,12 @@ On X11:
   the extension learns that the daemon is there a moment after it starts.
 - On Wayland an application that listens for three-finger swipes itself may
   no longer receive them.
+- On Wayland the swipes of three fingers are kept from GNOME on every
+  touchpad, but the daemon reads only one. Three fingers on a second
+  touchpad do nothing while the daemon runs.
+- On Wayland, if GNOME Shell does not answer the daemon within half a
+  second as a drag starts, that drag does nothing, and nor does any other
+  for the next second.
 - Everything below is about the X11 mode, except the lines on dragging.
 - For a moment after lifting from a drag the button is still held, so a
   finger left on the pad can nudge the dragged item.
