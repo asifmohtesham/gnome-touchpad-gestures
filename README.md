@@ -320,6 +320,7 @@ On Wayland, after logging out and in:
       swipe is GNOME's again. Start it: the drag is back.
 - [ ] `gnome-extensions disable` with the service running: no drag, and a
       three-finger swipe is GNOME's.
+- [ ] Suspend and resume; the drag works again at once.
 
 On X11:
 
