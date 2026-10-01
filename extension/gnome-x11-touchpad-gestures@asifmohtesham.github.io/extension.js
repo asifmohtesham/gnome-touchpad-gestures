@@ -32,6 +32,9 @@ const INTERFACE = `
       <arg type="u" direction="in" name="time"/>
     </method>
     <method name="SwipeCancel"/>
+    <method name="ThreeFingersFree">
+      <arg type="b" direction="out" name="free"/>
+    </method>
   </interface>
 </node>`;
 
@@ -85,5 +88,9 @@ export default class GesturesExtension extends Extension {
 
     SwipeCancel() {
         this._swipe.cancel();
+    }
+
+    ThreeFingersFree() {
+        return false;
     }
 }

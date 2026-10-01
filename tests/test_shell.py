@@ -5,8 +5,8 @@ import unittest
 import dbus
 
 from gnome_x11_touchpad_gestures.shell import (
-    EXTENSION_INTERFACE, EXTENSION_PATH, OVERVIEW_TIMEOUT_S, SHELL_RETRY_S,
-    Shell)
+    DAEMON_NAME, DRAG_COMPLAINT, EXTENSION_INTERFACE, EXTENSION_PATH,
+    OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
 
 
 class FakeBus:
@@ -19,6 +19,10 @@ class FakeBus:
         self.extension_error = None
         self.extension_answers = {}
         self.overview_error = None
+        self.names = []
+        self.name_attempts = 0
+        self.name_error = None
+        self.name_reply = 1   # the name is ours
 
     def call_blocking(self, bus_name, object_path, interface, method,
                       signature, args, timeout=None):
@@ -36,6 +40,13 @@ class FakeBus:
         if self.overview_error:
             raise self.overview_error
         return self.answer
+
+    def request_name(self, name, flags=0):
+        self.name_attempts += 1
+        if self.name_error:
+            raise self.name_error
+        self.names.append(name)
+        return self.name_reply
 
     def send_message(self, message):
         if self.extension_error:
@@ -442,6 +453,118 @@ class ExtensionTest(unittest.TestCase):
         self.quietly(self.shell.show_overview, True)
         self.assertEqual(self.bus.calls[-1], request(True))
 
+
+class DragModeTest(unittest.TestCase):
+    """What the daemon needs of the bus where the desktop does the other
+    gestures itself: a name the extension can see, and its leave to drag."""
+
+    def setUp(self):
+        self.bus = FakeBus()
+        self.now = 100.0
+        self.connect_error = None
+        self.shell = Shell(connect=self.connect, clock=lambda: self.now,
+                           complaint=DRAG_COMPLAINT)
+
+    def connect(self):
+        if self.connect_error:
+            raise self.connect_error
+        return self.bus
+
+    def quietly(self, call, *args):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            answer = call(*args)
+        return answer, stderr.getvalue()
+
+    def test_name_is_the_one_the_extension_watches_for(self):
+        self.assertEqual(DAEMON_NAME, "io.github.asifmohtesham.Gestures.Daemon")
+
+    def test_name_is_taken(self):
+        self.assertEqual(self.quietly(self.shell.announce), (True, ""))
+        self.assertEqual(self.bus.names, [DAEMON_NAME])
+
+    def test_name_already_ours_counts(self):
+        self.bus.name_reply = 4
+        self.assertIs(self.quietly(self.shell.announce)[0], True)
+
+    def test_name_held_by_another_program_is_said_and_is_no(self):
+        for reply in (2, 3):
+            with self.subTest(reply=reply):
+                self.setUp()
+                self.bus.name_reply = reply
+                taken, said = self.quietly(self.shell.announce)
+                self.assertIs(taken, False)
+                self.assertIn(DAEMON_NAME, said)
+                self.assertIn("three-finger drag is off", said)
+
+    def test_bus_that_refuses_the_name_is_said_and_survived(self):
+        self.bus.name_error = RuntimeError("not allowed")
+        taken, said = self.quietly(self.shell.announce)
+        self.assertIs(taken, False)
+        self.assertIn("not allowed", said)
+
+    def test_bus_that_is_not_there_is_survived(self):
+        self.connect_error = RuntimeError("no session bus")
+        taken, said = self.quietly(self.shell.announce)
+        self.assertIs(taken, False)
+        self.assertIn("no session bus", said)
+
+    def test_name_once_taken_is_not_asked_for_again(self):
+        for _ in range(3):
+            self.quietly(self.shell.announce)
+        self.assertEqual(self.bus.name_attempts, 1)
+
+    def test_name_that_could_not_be_taken_is_left_alone_for_a_while(self):
+        self.bus.name_error = RuntimeError("not allowed")
+        said = [self.quietly(self.shell.announce)[1] for _ in range(3)]
+        self.assertEqual(self.bus.name_attempts, 1)
+        self.assertEqual([bool(text) for text in said], [True, False, False])
+
+    def test_name_is_tried_again_after_that_while_and_then_had(self):
+        self.connect_error = RuntimeError("no session bus")
+        self.quietly(self.shell.announce)
+        self.connect_error = None
+        self.now += SHELL_RETRY_S
+        self.assertEqual(self.quietly(self.shell.announce), (True, ""))
+        self.assertEqual(self.bus.names, [DAEMON_NAME])
+
+    def test_extension_s_leave_is_asked(self):
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.assertEqual(self.quietly(self.shell.three_fingers_free), (True, ""))
+        self.assertEqual(self.bus.calls, [(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "ThreeFingersFree", "", (), OVERVIEW_TIMEOUT_S)])
+
+    def test_extension_that_says_no_is_taken_at_its_word(self):
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(False)
+        self.assertEqual(self.quietly(self.shell.three_fingers_free), (False, ""))
+
+    def test_asking_takes_the_name_first(self):
+        # A daemon started before the bus was there has no name yet.
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.quietly(self.shell.three_fingers_free)
+        self.quietly(self.shell.three_fingers_free)
+        self.assertEqual(self.bus.names, [DAEMON_NAME])
+
+    def test_silent_extension_means_no_and_says_what_that_costs_here(self):
+        self.bus.extension_error = RuntimeError("No such interface")
+        free, said = self.quietly(self.shell.three_fingers_free)
+        self.assertIs(free, False)
+        self.assertIn("three-finger drag is off", said)
+        self.assertNotIn("workspaces", said)
+
+    def test_silent_extension_is_left_alone_for_a_while(self):
+        self.bus.extension_error = RuntimeError("No such interface")
+        self.quietly(self.shell.three_fingers_free)
+        asked = len(self.bus.calls)
+        self.assertEqual(self.quietly(self.shell.three_fingers_free), (False, ""))
+        self.assertEqual(len(self.bus.calls), asked)
+
+    def test_where_every_gesture_is_done_the_complaint_is_the_old_one(self):
+        shell = Shell(connect=self.connect, clock=lambda: self.now)
+        self.bus.extension_error = RuntimeError("No such interface")
+        said = self.quietly(shell.pointer_over_window)[1]
+        self.assertIn("workspaces", said)
+        self.assertNotIn("three-finger drag", said)
 
 if __name__ == "__main__":
     unittest.main()
