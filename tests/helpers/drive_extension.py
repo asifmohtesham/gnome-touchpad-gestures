@@ -139,7 +139,31 @@ def as_on_wayland(bus, control, seen):
     seen["swipe once on again"] = swipe()
 
 
-def main(directory, real_bus, mode):
+def as_on_wayland_in_another_shell(bus, control, seen):
+    def free():
+        return bool(bus.call_blocking(
+            "org.gnome.Shell", EXTENSION_PATH, EXTENSION_INTERFACE,
+            "ThreeFingersFree", "", (), timeout=5))
+
+    seen["version"] = Shell().extension_version()
+    seen["handlers"] = int(control("Handlers"))
+    seen["watches"] = int(control("Watches"))
+    daemon = Shell()
+    seen["name taken"] = daemon.announce()
+    seen["free with the daemon"] = daemon.three_fingers_free()
+    # Long enough for a watch on the bus, were there one, to have fired.
+    time.sleep(0.5)
+    seen["free a moment later"] = free()
+    seen["three fingers"] = [
+        bool(control("Swipe", phase, dbus.UInt32(3), signature="su"))
+        for phase in ("begin", "update", "end")]
+    asked = Shell()
+    seen["over window"] = asked.pointer_over_window()
+    seen["begin"] = asked.swipe_begin(12.5)
+    seen.update(json.loads(str(control("Seen"))))
+
+
+def main(directory, real_bus, mode, shell_version):
     bus = dbus.SessionBus()
     # The runner takes the shell's name. On the desktop's own bus that name
     # belongs to the real shell, and nothing here may go near it.
@@ -151,7 +175,8 @@ def main(directory, real_bus, mode):
         sys.exit("refusing to run where a shell is already answering")
 
     runner = subprocess.Popen(
-        ["gjs", "-m", str(REPO / "tests/js/run_extension.js"), directory, mode],
+        ["gjs", "-m", str(REPO / "tests/js/run_extension.js"), directory,
+         "x11" if mode == "x11" else "wayland", shell_version],
         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
         ready = runner.stdout.readline().strip()
@@ -164,7 +189,9 @@ def main(directory, real_bus, mode):
                 signature, args, timeout=5)
 
         seen = {}
-        (as_on_wayland if mode == "wayland" else as_on_x11)(bus, control, seen)
+        {"x11": as_on_x11, "wayland": as_on_wayland,
+         "wayland-elsewhere": as_on_wayland_in_another_shell}[mode](
+            bus, control, seen)
         control("Quit")
         runner.wait(timeout=10)
         seen["runner exit"] = runner.returncode
@@ -176,4 +203,4 @@ def main(directory, real_bus, mode):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2], sys.argv[3])
+    main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])

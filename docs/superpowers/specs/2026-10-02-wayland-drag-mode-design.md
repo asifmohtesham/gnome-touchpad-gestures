@@ -93,8 +93,14 @@ Different in drag mode:
   held.
 
 The question is put through the existing `Asked` logic: half a second at
-most, and an extension that does not answer is left alone for five seconds
-and complained of once. The complaint names the mode's own consequence,
+most, and an extension that does not answer is left alone for a while and
+complained of once. That while is one second here (`DRAG_RETRY_S`), not
+the five of the X11 mode: while it lasts three fingers do nothing at all,
+since the extension goes on swallowing and the daemon does not drag, and
+the question is only put once for each drag. A daemon that could not take
+its name does not ask and does not drag: if another program holds the
+name, the extension would say yes to both. (Both from the review of the
+branch, 2026-10-02.) The complaint names the mode's own consequence,
 that three-finger drag is off.
 
 One known rough edge: the first drag in the moment after the daemon starts
@@ -160,6 +166,13 @@ along with the handler on the stage.
 - `metadata.json`: `"shell-version": ["46", "50"]`. The Wayland behaviour
   uses nothing private, but it has been seen to work on 50 only, and the
   X11 behaviour on 46 only. Versions between are not named.
+- Shell 46 has a Wayland session too, and there the extension would load.
+  It frees three fingers only where the shell's own version
+  (`Config.PACKAGE_VERSION`) is 50; elsewhere on Wayland it connects
+  nothing and answers `ThreeFingersFree` with no, so the daemon does not
+  drag. An older shell is believed to handle a swipe before an extension
+  can see it, which would let its swipe land on a held drag. (From the
+  review of the branch, 2026-10-02.)
 
 ## The service
 

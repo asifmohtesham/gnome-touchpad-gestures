@@ -181,3 +181,18 @@ export class SwipeFilter {
         return swallow;
     }
 }
+
+// The versions of the shell in which keeping its swipes from it, as
+// extension.js does on Wayland, has been seen to work.
+const WAYLAND_SHELLS = [50];
+
+// Whether to free three fingers in this version of the shell. Where it was
+// never tried, they are left as the shell has them: an older shell handles
+// a swipe before an extension can see it, and swallowing it too late would
+// let the shell's swipe land on a drag with the button held.
+export function freesThreeFingersOn(version) {
+    if (typeof version !== 'string')
+        return false;
+    const major = /^(\d+)(\.|$)/.exec(version);
+    return major !== null && WAYLAND_SHELLS.includes(Number(major[1]));
+}

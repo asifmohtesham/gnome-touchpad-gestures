@@ -45,6 +45,12 @@ FULL_COMPLAINT = (
     "the fingers and glides are held back only in the overview")
 DRAG_COMPLAINT = (
     "the shell extension is not answering, so three-finger drag is off")
+# How long an extension that did not answer is left alone where the daemon
+# only drags. Shorter than elsewhere, for two reasons. While it lasts three
+# fingers do nothing at all: the extension goes on keeping the shell's
+# swipes off them, and the daemon does not drag. And the question is put
+# once for each drag, not several times in the course of a glide.
+DRAG_RETRY_S = 1.0
 PREFIX = "gnome-x11-touchpad-gestures: "
 # What the bus calls a question that was given no answer in time.
 UNANSWERED = (
@@ -72,9 +78,11 @@ class Asked:
     its failure from being logged at every gesture.
     """
 
-    def __init__(self, clock, complaint: str) -> None:
+    def __init__(self, clock, complaint: str,
+                 rest_s: float = SHELL_RETRY_S) -> None:
         self._clock = clock
         self._complaint = complaint
+        self._rest_s = rest_s
         self._again_at = 0.0
         self._answering = True
 
@@ -92,17 +100,17 @@ class Asked:
 
     def rest(self) -> None:
         """Not to be asked for a while, for a reason found out elsewhere."""
-        self._again_at = self._clock() + SHELL_RETRY_S
+        self._again_at = self._clock() + self._rest_s
 
 
 class Shell:
     def __init__(self, connect=dbus.SessionBus, clock=time.monotonic,
-                 complaint=FULL_COMPLAINT) -> None:
+                 complaint=FULL_COMPLAINT, retry_s=SHELL_RETRY_S) -> None:
         self._connect = connect
         self._bus = None
         self._overview = Asked(
             clock, "could not ask whether the overview is open")
-        self._extension = Asked(clock, complaint)
+        self._extension = Asked(clock, complaint, retry_s)
         self._name = Asked(
             clock, f"could not take the name {DAEMON_NAME} on the session "
                    "bus, so three-finger drag is off")
@@ -258,6 +266,7 @@ class Shell:
     def three_fingers_free(self) -> bool:
         """Whether the extension is keeping the shell's swipes off three fingers."""
         # Taken here too: a daemon started before the bus was there has no
-        # name yet, and without one the extension frees nothing.
-        self.announce()
-        return bool(self._ask("ThreeFingersFree"))
+        # name yet. One that cannot have the name does not drag: if another
+        # program holds it, a second daemon for one, the extension would
+        # say yes to both and both would drag.
+        return self.announce() and bool(self._ask("ThreeFingersFree"))

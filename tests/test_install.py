@@ -986,6 +986,32 @@ class RestartAdviceTest(unittest.TestCase):
                 self.assertIn("X11 or Wayland", said)
 
 
+class WhatIsSaidTest(unittest.TestCase):
+    """Statements that were true of X11 alone and are easy to leave behind."""
+
+    def setUp(self):
+        self.readme = " ".join((REPO / "README.md").read_text().split())
+
+    def test_readme_says_the_service_starts_in_either_session(self):
+        self.assertNotIn("only if that session is X11.", self.readme)
+        self.assertIn("only if that session is X11 or Wayland.", self.readme)
+
+    def test_readme_does_not_play_down_the_rule_where_it_is_news(self):
+        # On X11 any program can type and click already. On Wayland it cannot.
+        self.assertIn("On Wayland no program can", self.readme)
+
+    def test_readme_says_what_happens_in_a_shell_the_drag_was_not_tried_in(self):
+        self.assertIn("frees nothing", self.readme)
+
+    def test_changelog_does_not_say_that_nothing_at_all_changed_on_x11(self):
+        changelog = (REPO / "CHANGELOG.md").read_text()
+        self.assertNotIn("On X11 nothing has changed.", changelog)
+
+    def test_installer_does_not_say_every_gesture_works_without_the_extension(self):
+        script = (INSTALL / "install.sh").read_text()
+        self.assertNotIn("Without it the gestures still work", script)
+
+
 class InstalledFilesTest(unittest.TestCase):
     def test_rule_leaves_anything_that_is_also_a_keyboard_alone(self):
         rule = (INSTALL / RULE).read_text()

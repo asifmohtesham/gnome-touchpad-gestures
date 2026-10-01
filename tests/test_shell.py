@@ -5,7 +5,7 @@ import unittest
 import dbus
 
 from gnome_x11_touchpad_gestures.shell import (
-    DAEMON_NAME, DRAG_COMPLAINT, EXTENSION_INTERFACE, EXTENSION_PATH,
+    DAEMON_NAME, DRAG_COMPLAINT, DRAG_RETRY_S, EXTENSION_INTERFACE, EXTENSION_PATH,
     OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
 
 
@@ -558,6 +558,45 @@ class DragModeTest(unittest.TestCase):
         asked = len(self.bus.calls)
         self.assertEqual(self.quietly(self.shell.three_fingers_free), (False, ""))
         self.assertEqual(len(self.bus.calls), asked)
+
+    def test_daemon_that_cannot_have_the_name_does_not_drag(self):
+        # Another program holds it, a second daemon for one. The extension
+        # would say yes to both, and both would drag.
+        self.bus.name_reply = 3
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.assertIs(self.quietly(self.shell.three_fingers_free)[0], False)
+        self.assertEqual(self.bus.calls, [])
+
+    def test_nor_does_one_whose_bus_refused_the_name(self):
+        self.bus.name_error = RuntimeError("not allowed")
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.assertIs(self.quietly(self.shell.three_fingers_free)[0], False)
+
+    def test_extension_that_did_not_answer_is_asked_again_sooner_here(self):
+        # While it rests, three fingers do nothing at all: the extension
+        # keeps the shell's swipes off them and the daemon does not drag.
+        self.assertLessEqual(DRAG_RETRY_S, 1.0)
+        self.assertLess(DRAG_RETRY_S, SHELL_RETRY_S)
+        shell = Shell(connect=self.connect, clock=lambda: self.now,
+                      complaint=DRAG_COMPLAINT, retry_s=DRAG_RETRY_S)
+        self.bus.extension_error = RuntimeError("did not answer")
+        self.quietly(shell.three_fingers_free)
+        self.bus.extension_error = None
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.now += DRAG_RETRY_S / 2
+        self.assertIs(self.quietly(shell.three_fingers_free)[0], False)
+        self.now += DRAG_RETRY_S / 2
+        self.assertIs(self.quietly(shell.three_fingers_free)[0], True)
+
+    def test_without_being_told_otherwise_the_rest_is_the_long_one(self):
+        self.bus.extension_error = RuntimeError("did not answer")
+        self.quietly(self.shell.three_fingers_free)
+        self.bus.extension_error = None
+        self.bus.extension_answers["ThreeFingersFree"] = dbus.Boolean(True)
+        self.now += DRAG_RETRY_S
+        self.assertIs(self.quietly(self.shell.three_fingers_free)[0], False)
+        self.now += SHELL_RETRY_S
+        self.assertIs(self.quietly(self.shell.three_fingers_free)[0], True)
 
     def test_where_every_gesture_is_done_the_complaint_is_the_old_one(self):
         shell = Shell(connect=self.connect, clock=lambda: self.now)

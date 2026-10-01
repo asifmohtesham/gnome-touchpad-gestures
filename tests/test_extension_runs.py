@@ -23,6 +23,7 @@ UUID = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
 IMPORTS = {
     "'gi://Clutter'": "'./stand_in_clutter.js'",
     "'gi://Meta'": "'./stand_in_meta.js'",
+    "'resource:///org/gnome/shell/misc/config.js'": "'./stand_in_config.js'",
     "'resource:///org/gnome/shell/extensions/extension.js'": "'./stand_in_extension.js'",
     "'resource:///org/gnome/shell/ui/main.js'": "'./stand_in_main.js'",
 }
@@ -40,13 +41,14 @@ def copy_with_stand_ins(directory):
     assert "gi://Clutter" not in source, "an import without a stand-in"
     assert "gi://Meta" not in source, "an import without a stand-in"
     (pathlib.Path(directory) / "extension.js").write_text(source)
-    for name in ("clutter", "extension", "main", "meta"):
+    for name in ("clutter", "config", "extension", "main", "meta"):
         shutil.copy(REPO / "tests/js/stand_ins" / f"{name}.js",
                     pathlib.Path(directory) / f"stand_in_{name}.js")
 
 
-def run_extension(mode):
-    """Runs the extension in a session of the kind named. What happened, or why not."""
+def run_extension(mode, shell="50.1"):
+    """Runs the extension in a session of the kind named, in a shell of the
+    version named. What happened, or why not."""
     with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as directory:
         copy_with_stand_ins(directory)
         environment = {key: value for key, value in os.environ.items()
@@ -57,7 +59,7 @@ def run_extension(mode):
         result = subprocess.run(
             ["dbus-run-session", "--", sys.executable,
              str(REPO / "tests/helpers/drive_extension.py"), directory,
-             os.environ.get("DBUS_SESSION_BUS_ADDRESS", ""), mode],
+             os.environ.get("DBUS_SESSION_BUS_ADDRESS", ""), mode, shell],
             capture_output=True, text=True, timeout=90, env=environment)
     if result.returncode != 0:
         return {}, f"exit {result.returncode}\n{result.stdout}\n{result.stderr}"
@@ -66,10 +68,11 @@ def run_extension(mode):
 
 class Ran(unittest.TestCase):
     MODE = None
+    SHELL = "50.1"
 
     @classmethod
     def setUpClass(cls):
-        cls.seen, cls.failure = run_extension(cls.MODE)
+        cls.seen, cls.failure = run_extension(cls.MODE, cls.SHELL)
 
     def setUp(self):
         if self.failure:
@@ -80,6 +83,7 @@ class Ran(unittest.TestCase):
                      "needs gjs and dbus-run-session")
 class ExtensionRunsTest(Ran):
     MODE = "x11"
+    SHELL = "46.0"
 
     def test_it_runs_and_stops_without_complaint(self):
         self.assertEqual(self.seen["runner exit"], 0)
@@ -235,14 +239,50 @@ class OnWaylandTest(Ran):
         self.assertEqual(self.seen["swipe once on again"], self.WHOLE)
 
 
+@unittest.skipUnless(all(shutil.which(tool) for tool in NEEDED),
+                     "needs gjs and dbus-run-session")
+class OnWaylandInAnotherShellTest(Ran):
+    """The swallowing was seen to work in one version of the shell. In any
+    other, three fingers are left as the shell has them, and the daemon,
+    told that they are not free, does not drag."""
+
+    MODE = "wayland-elsewhere"
+    SHELL = "46.0"
+
+    def test_it_runs_and_stops_without_complaint(self):
+        self.assertEqual(self.seen["runner exit"], 0)
+        self.assertEqual(self.seen["runner complaints"], "")
+
+    def test_it_still_tells_its_version(self):
+        self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
+
+    def test_it_listens_to_nothing_and_watches_nothing(self):
+        self.assertEqual(self.seen["handlers"], 0)
+        self.assertEqual(self.seen["watches"], 0)
+
+    def test_three_fingers_are_never_said_to_be_free(self):
+        self.assertIs(self.seen["name taken"], True)
+        self.assertIs(self.seen["free with the daemon"], False)
+        self.assertIs(self.seen["free a moment later"], False)
+
+    def test_no_swipe_is_swallowed(self):
+        self.assertEqual(self.seen["three fingers"], [False, False, False])
+
+    def test_the_shell_s_insides_are_left_alone_there_too(self):
+        self.assertIs(self.seen["begin"], False)
+        self.assertIs(self.seen["over window"], False)
+        self.assertEqual(self.seen["calls"], [])
+
+
 class StandInsTest(unittest.TestCase):
     def test_every_import_from_the_shell_has_a_stand_in(self):
         with tempfile.TemporaryDirectory() as directory:
             copy_with_stand_ins(directory)
             files = sorted(p.name for p in pathlib.Path(directory).iterdir())
         self.assertEqual(files, ["extension.js", "gestures.js", "metadata.json",
-                                 "stand_in_clutter.js", "stand_in_extension.js",
-                                 "stand_in_main.js", "stand_in_meta.js"])
+                                 "stand_in_clutter.js", "stand_in_config.js",
+                                 "stand_in_extension.js", "stand_in_main.js",
+                                 "stand_in_meta.js"])
 
 
 if __name__ == "__main__":

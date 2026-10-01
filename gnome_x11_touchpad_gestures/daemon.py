@@ -20,7 +20,7 @@ from gnome_x11_touchpad_gestures.momentum import MomentumMachine
 from gnome_x11_touchpad_gestures.output import (
     WORKSPACE_KEYS, DragOnly, NoDevice, Output)
 from gnome_x11_touchpad_gestures.shell import (
-    DRAG_COMPLAINT, OVERVIEW_TIMEOUT_S, Shell)
+    DRAG_COMPLAINT, DRAG_RETRY_S, OVERVIEW_TIMEOUT_S, Shell)
 from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
@@ -308,7 +308,7 @@ def _terminate(signum, frame):
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         prog="gnome-x11-touchpad-gestures",
-        description="Three-finger drag, four-finger workspace switch "
+        description="Three-finger drag; on X11 also four-finger swipes "
                     "and momentum scrolling.")
     parser.add_argument(
         "--version", action="version",
@@ -345,7 +345,7 @@ def main(argv=None) -> int:
         if mode == "drag":
             # The desktop does the other gestures, so their devices are
             # not made and their actions not carried out.
-            shell = Shell(complaint=DRAG_COMPLAINT)
+            shell = Shell(complaint=DRAG_COMPLAINT, retry_s=DRAG_RETRY_S)
             output = DragOnly(
                 Output(pointer, NoDevice(), NoDevice(), shell),
                 shell.three_fingers_free)

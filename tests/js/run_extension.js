@@ -2,6 +2,7 @@
 //
 // Usage: gjs -m run_extension.js <directory holding a copy of the extension
 // whose imports from the shell point at the stand-ins> <x11|wayland>
+// <version of the shell>
 //
 // It must only ever run on a bus of its own: it takes the shell's name.
 import Gio from 'gi://Gio';
@@ -13,6 +14,8 @@ const Main = await import(`file://${directory}/stand_in_main.js`);
 const {default: Clutter} = await import(`file://${directory}/stand_in_clutter.js`);
 const Meta = await import(`file://${directory}/stand_in_meta.js`);
 Meta.setWayland(ARGV[1] === 'wayland');
+const Config = await import(`file://${directory}/stand_in_config.js`);
+Config.setVersion(ARGV[2]);
 
 // What is connected to the stage, so that events can be put through it.
 const handlers = new Map();

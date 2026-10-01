@@ -4,7 +4,7 @@ import System from 'system';
 
 import {
     BASE_DISTANCE, DRAG_FINGERS, SwipeFilter, WATCHDOG_MS, WorkspaceSwipe,
-    isOverWindow,
+    freesThreeFingersOn, isOverWindow,
 } from '../../extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io/gestures.js';
 
 let run = 0;
@@ -499,6 +499,25 @@ test('only a plain yes counts as the daemon being there', () => {
 test('a count of fingers that is not three in every way is not three', () => {
     for (const fingers of ['3', 3.5, undefined, null, NaN])
         same(new SwipeFilter().handle('begin', fingers, true), false);
+});
+
+// Which shells the swallowing has been seen to work in.
+
+test('three fingers are freed on the shell it was seen to work in', () => {
+    for (const version of ['50.1', '50', '50.0', '50.beta', '50.rc'])
+        same(freesThreeFingersOn(version), true, version);
+});
+
+test('they are not freed on a shell it was never tried in', () => {
+    // An older shell handles a swipe before an extension can see it, so
+    // the swallow would come too late and land on a held drag.
+    for (const version of ['46.0', '46', '47.2', '49.9', '51.0', '5', '500'])
+        same(freesThreeFingersOn(version), false, version);
+});
+
+test('a version that cannot be read frees nothing', () => {
+    for (const version of ['', 'unknown', undefined, null, 50, {}])
+        same(freesThreeFingersOn(version), false, String(version));
 });
 
 print(`${run} tests, ${failed} failed`);

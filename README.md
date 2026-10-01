@@ -57,7 +57,9 @@ longer tried by hand there; it rests on the test suite.
 
 - GNOME Shell 46 on **X11**, or GNOME Shell 50 on **Wayland**. The
   extension declares those two versions and the shell will not load it on
-  another; without it there is no drag on Wayland.
+  another; without it there is no drag on Wayland. On Wayland with GNOME
+  Shell 46 the extension loads but frees nothing, and there is no drag:
+  that pairing was never tried.
 - A touchpad that reports each finger separately (multitouch protocol B).
   Nearly all laptops from the last ten years do. The four-finger gestures
   need one that tracks at least four fingers at once.
@@ -174,7 +176,7 @@ puts them back.
   alone for the same reason.
 - **One user service**,
   `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It starts
-  with your graphical session, and only if that session is X11.
+  with your graphical session, and only if that session is X11 or Wayland.
 - **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
 - **The shell extension**, copied to
   `~/.local/share/gnome-shell/extensions/gnome-x11-touchpad-gestures@asifmohtesham.github.io`
@@ -184,7 +186,9 @@ puts them back.
 
 Be aware of what the rule allows: any program you run can then create input
 devices, and so type and click as you. On X11 any program can already do
-that through XTest, so this adds little there.
+that through XTest, so this adds little there. On Wayland no program can,
+unless you grant it, so there the rule gives every program you run
+something it did not have. That is the price of the drag on Wayland.
 
 If the machine has more than one touchpad, the daemon uses the built-in
 one. A touchpad on USB or Bluetooth is used only when there is no other.

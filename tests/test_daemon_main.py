@@ -360,13 +360,22 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.run_main(touchpad, "x11"), 0)
         self.assertGreater(FakeShell.asked_glide, 0)
 
+    def test_help_does_not_promise_every_gesture_in_every_session(self):
+        with contextlib.redirect_stdout(io.StringIO()) as stdout, \
+                self.assertRaises(SystemExit):
+            daemon.main(["--help"])
+        said = " ".join(stdout.getvalue().split())
+        self.assertIn("Three-finger drag", said)
+        self.assertIn("on X11 also", said)
+
     def test_drag_mode_survives_a_name_it_cannot_take(self):
         with mock.patch.object(FakeShell, "announce", return_value=False):
             self.assertEqual(self.run_main(FakeTouchpad([interrupt]), "wayland"), 0)
 
     def test_shell_is_told_what_its_silence_costs_in_each_mode(self):
         self.run_main(FakeTouchpad([interrupt]), "wayland")
-        self.assertEqual(FakeShell.made_with, {"complaint": shell.DRAG_COMPLAINT})
+        self.assertEqual(FakeShell.made_with, {
+            "complaint": shell.DRAG_COMPLAINT, "retry_s": shell.DRAG_RETRY_S})
         self.run_main(FakeTouchpad([interrupt]), "x11")
         self.assertEqual(FakeShell.made_with, {})
 

@@ -24,7 +24,9 @@ Changed
   be restarted in place, so the installer and `--check` say to log out and
   back in where they used to say to restart the shell.
 
-On X11 nothing has changed.
+On X11 the gestures are as they were. What is said has changed a little:
+the service's startup line and `--check` name the mode, and the extension
+is listed as "Touchpad gestures".
 
 ## 0.2.1 (2026-09-29)
 

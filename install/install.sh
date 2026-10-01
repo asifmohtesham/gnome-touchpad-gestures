@@ -11,8 +11,9 @@ rules_dir="/etc/udev/rules.d"
 # Where the program is installed. The unit names the same place as
 # %h/.local/share/gnome-x11-touchpad-gestures, so the two must change together.
 program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
-# The part that runs inside GNOME Shell. Without it the gestures still work,
-# but workspaces snap across and glides are held back only in the overview.
+# The part that runs inside GNOME Shell. On X11 the gestures work without
+# it, but workspaces snap across and glides are held back only in the
+# overview. On Wayland there is no drag without it.
 extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
 extensions_dir="$HOME/.local/share/gnome-shell/extensions"
 # What this project installed when it was called finger-drag. Left in place,

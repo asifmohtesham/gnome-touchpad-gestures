@@ -15,9 +15,12 @@ import GLib from 'gi://GLib';
 import Meta from 'gi://Meta';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
+import * as Config from 'resource:///org/gnome/shell/misc/config.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
-import {SwipeFilter, WorkspaceSwipe, isOverWindow} from './gestures.js';
+import {
+    SwipeFilter, WorkspaceSwipe, freesThreeFingersOn, isOverWindow,
+} from './gestures.js';
 
 const OBJECT_PATH = '/io/github/asifmohtesham/Gestures';
 // The name the daemon takes on the session bus where it only drags.
@@ -60,10 +63,10 @@ export default class GesturesExtension extends Extension {
     enable() {
         this._wayland = Meta.is_wayland_compositor();
         this._daemonPresent = false;
-        if (this._wayland)
-            this._freeThreeFingers();
-        else
+        if (!this._wayland)
             this._followSwipes();
+        else if (freesThreeFingersOn(Config.PACKAGE_VERSION))
+            this._freeThreeFingers();
         this._exported = Gio.DBusExportedObject.wrapJSObject(INTERFACE, this);
         this._exported.export(Gio.DBus.session, OBJECT_PATH);
     }
