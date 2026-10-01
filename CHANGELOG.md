@@ -4,6 +4,28 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
+## 0.3.0 (unreleased)
+
+Added
+- Three-finger drag on GNOME on Wayland. GNOME has its own workspace
+  swipes and overview there, and its toolkits their own momentum; the one
+  thing it lacks is the drag. On Wayland the daemon does that and nothing
+  else.
+- The extension keeps GNOME's own swipes off three fingers while the daemon
+  is running, so that the two do not land on top of each other. With the
+  daemon stopped they are GNOME's again at once.
+- `--check` names the mode it would run in.
+
+Changed
+- The service starts in a Wayland session as well as an X11 one.
+- On Wayland, while the daemon runs, GNOME's workspace and overview swipes
+  need four fingers. Three no longer do them.
+- The extension declares GNOME Shell 46 and 50. On Wayland the shell cannot
+  be restarted in place, so the installer and `--check` say to log out and
+  back in where they used to say to restart the shell.
+
+On X11 nothing has changed.
+
 ## 0.2.1 (2026-09-29)
 
 Fixed
