@@ -4,7 +4,7 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
-## 0.3.1 (unreleased)
+## 0.3.1 (2026-10-02)
 
 Fixed
 - On Wayland, dragging a window with three fingers inside the Activities
