@@ -141,6 +141,19 @@ runs before the shell's own swipe handling, and returns "stop" for the
 events to be swallowed. Only the public event calls are used:
 `type()`, `get_touchpad_gesture_finger_count()`, `get_gesture_phase()`.
 
+(Changed in 0.3.1.) The handler on the stage was the wrong tool. While a
+button is held, Clutter sends every event of that pointer down a chain
+fixed at the press, and an event that a handler on an actor stops makes it
+cancel every gesture in that chain (`clutter_sprite_remove_all_actions_from_chain`).
+The daemon holds the button all through a drag, so each swallowed swipe
+event cancelled the shell's own drag of a window in the overview: it
+worked only when the drag got going before the first swipe event came, or
+when the fingers went down two and then one, which makes no swipe. The
+swallowing is now done by an action on the stage in the capture phase
+(a `Clutter.Action` with `vfunc_handle_event`). An event that an action
+handles ends there and cancels nothing. Windows on the desktop were never
+affected: their drag is the compositor's, not a gesture of the shell's.
+
 A swipe is a run of events: a begin, updates, an end or a cancel. It is
 swallowed whole or not at all. The decision is made at its begin: swallow
 if it has exactly three fingers and the daemon is there. Every later event

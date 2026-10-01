@@ -2,4 +2,4 @@
 
 # The one place the version is written. The changelog's newest entry and the
 # shell extension's metadata must agree with it; tests check that they do.
-__version__ = "0.3.0"
+__version__ = "0.3.1"

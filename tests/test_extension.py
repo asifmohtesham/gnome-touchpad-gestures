@@ -47,6 +47,21 @@ class JavaScriptTest(unittest.TestCase):
         self.assertEqual(re.findall(r"^\s*import\b.*$", source, re.MULTILINE), [])
 
 
+class NoHandlerOnTheStageTest(unittest.TestCase):
+    def test_swipes_are_not_swallowed_by_a_handler_on_the_stage(self):
+        # While a button is held, an event that a handler on an actor stops
+        # makes Clutter cancel every gesture under way for that pointer
+        # (clutter_sprite_remove_all_actions_from_chain). The daemon holds
+        # the button during a drag, so a swallowed swipe cancelled the
+        # shell's own drag of a window in the overview. An action that
+        # handles the event ends it without cancelling anything.
+        source = (EXTENSION / "extension.js").read_text()
+        self.assertNotIn("captured-event", source)
+        self.assertNotIn("stage.connect(", source)
+        self.assertIn("vfunc_handle_event", source)
+        self.assertIn("Clutter.EventPhase.CAPTURE", source)
+
+
 class MetadataTest(unittest.TestCase):
     def setUp(self):
         self.metadata = json.loads((EXTENSION / "metadata.json").read_text())

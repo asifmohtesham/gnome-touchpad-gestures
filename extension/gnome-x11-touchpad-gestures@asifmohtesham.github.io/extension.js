@@ -12,6 +12,7 @@
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import Meta from 'gi://Meta';
 
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
@@ -60,6 +61,26 @@ const PHASES = new Map([
     [Clutter.TouchpadGesturePhase.CANCEL, 'end'],
 ]);
 
+// Keeps events from the shell for as long as `handle` says so.
+//
+// It is an action, not a handler connected to the stage, for a reason that
+// cost a bug. While a button is held, an event that a handler on an actor
+// stops makes Clutter cancel every gesture under way for that pointer. The
+// daemon holds the button all through a drag, so each swipe event stopped
+// by a handler cancelled the shell's own drag of a window in the overview.
+// An event that an action handles simply ends there.
+const Swallow = GObject.registerClass(
+class Swallow extends Clutter.Action {
+    _init(handle) {
+        super._init();
+        this._handle = handle;
+    }
+
+    vfunc_handle_event(event) {
+        return this._handle(event);
+    }
+});
+
 export default class GesturesExtension extends Extension {
     enable() {
         this._wayland = isWaylandShell(Meta);
@@ -80,9 +101,9 @@ export default class GesturesExtension extends Extension {
         if (this._watch)
             Gio.bus_unwatch_name(this._watch);
         this._watch = null;
-        if (this._captured)
-            global.stage.disconnect(this._captured);
-        this._captured = null;
+        if (this._swallow)
+            global.stage.remove_action(this._swallow);
+        this._swallow = null;
         this._filter = null;
     }
 
@@ -113,9 +134,12 @@ export default class GesturesExtension extends Extension {
             () => {
                 this._daemonPresent = false;
             });
-        // Captured events reach this before the shell's own swipe handling.
-        this._captured = global.stage.connect(
-            'captured-event::touchpad', (_actor, event) => this._onTouchpad(event));
+        // In the capture phase on the stage, it is reached before the
+        // shell's own swipe handling, and before anything else.
+        this._swallow = new Swallow(event => this._onTouchpad(event));
+        global.stage.add_action_full(
+            'gnome-x11-touchpad-gestures', Clutter.EventPhase.CAPTURE,
+            this._swallow);
     }
 
     _onTouchpad(event) {

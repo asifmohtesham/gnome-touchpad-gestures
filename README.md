@@ -299,8 +299,8 @@ python3 -m unittest discover -s tests
 ```
 
 The tests of the extension need `gjs`, and those that run it need
-`dbus-run-session` as well, from the package `dbus-daemon`. Both are there
-on a GNOME desktop. Without them those tests are skipped. The extension is
+`dbus-run-session` as well, from the package `dbus-daemon`, and GNOME
+Shell's own Clutter library. All are there on a GNOME desktop. Without them those tests are skipped. The extension is
 run on a message bus of its own, never on the desktop's.
 
 ## Manual checklist
