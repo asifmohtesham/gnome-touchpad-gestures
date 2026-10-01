@@ -90,7 +90,8 @@ service runs that copy. Two things follow:
   again. After editing a file or pulling an update, run
   `./install/install.sh`. It asks for your password only when there is
   something for it to do: the first time, when the udev rule itself has
-  changed, or when access to the devices is missing.
+  changed, when a rule under a former name is still there, or when access
+  to the devices is missing.
 
 The commands below are all run from the repository directory.
 
@@ -203,9 +204,10 @@ service starts.
 ```
 
 This stops and removes the service and the installed program, including
-anything an earlier version installed as `finger-drag`. It switches the
-shell extension off, removes it, and takes its name out of the shell's
-settings. It removes the udev rule, makes udev look at the devices afresh,
+anything an earlier version installed as `finger-drag` or as
+`gnome-x11-touchpad-gestures`. It switches the shell extension off, removes
+it, and takes its name out of the shell's settings; the extension of the
+former name goes the same way. It removes the udev rule, makes udev look at the devices afresh,
 and takes back the access to the touchpad and `/dev/uinput` that the rule
 had granted. Removing the rule alone would leave that access in place until
 the next reboot. The repository itself is left where it is.

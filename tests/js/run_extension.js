@@ -120,6 +120,7 @@ const CONTROL = `
     <method name="Broken"><arg type="b" direction="out"/></method>
     <method name="Handlers"><arg type="u" direction="out"/></method>
     <method name="Watches"><arg type="u" direction="out"/></method>
+    <method name="EnableAgain"><arg type="b" direction="out"/></method>
     <method name="Quit"/>
   </interface>
 </node>`;
@@ -176,6 +177,15 @@ const control = Gio.DBusExportedObject.wrapJSObject(CONTROL, {
     },
     Watches() {
         return watches;
+    },
+    // As a second copy of the extension loaded into one shell would.
+    EnableAgain() {
+        try {
+            extension.enable();
+        } catch (_error) {
+            return true;
+        }
+        return false;
     },
     Quit() {
         loop.quit();

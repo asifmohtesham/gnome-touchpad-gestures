@@ -83,14 +83,20 @@ class Swallow extends Clutter.Action {
 
 export default class GesturesExtension extends Extension {
     enable() {
+        // Exported before anything else is set up. The shell does not call
+        // disable() on an extension whose enable() threw, and this is the
+        // step that can: what came before it would be left behind, an
+        // action on the stage that goes on swallowing swipes for one.
+        const exported = Gio.DBusExportedObject.wrapJSObject(INTERFACE, this);
+        exported.export(Gio.DBus.session, OBJECT_PATH);
+        this._exported = exported;
+
         this._wayland = isWaylandShell(Meta);
         this._daemonPresent = false;
         if (!this._wayland)
             this._followSwipes();
         else if (freesThreeFingersOn(Config.PACKAGE_VERSION))
             this._freeThreeFingers();
-        this._exported = Gio.DBusExportedObject.wrapJSObject(INTERFACE, this);
-        this._exported.export(Gio.DBus.session, OBJECT_PATH);
     }
 
     disable() {

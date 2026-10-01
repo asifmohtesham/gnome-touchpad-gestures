@@ -826,7 +826,14 @@ behind: the old service would run beside the new one, so that every gesture
 happened twice, and the old rule would go on granting access after an
 uninstall. The installer and the uninstaller therefore remove all three.
 The old rule is a reason to ask for a password even when the new one is
-already in place. This is the only place the former name is still written.
+already in place.
+
+The project was renamed once more, in version 0.4.0, from
+`gnome-x11-touchpad-gestures` to what it is called now. The scripts keep a
+list of both former names and clear each in the same way, and for the
+second also the shell extension, which had a name of its own by then. The
+former names are written in those scripts, in their tests, in one line of
+the README and in the changelog's past entries, and nowhere else.
 
 ## A second mode, for Wayland (added 2026-10-02, version 0.3.0)
 

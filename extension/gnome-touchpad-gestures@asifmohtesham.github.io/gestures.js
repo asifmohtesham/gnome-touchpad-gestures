@@ -163,21 +163,32 @@ export const DRAG_FINGERS = 3;
 // are kept from it for as long as the daemon is there.
 //
 // A swipe is a run of events: a begin, updates, an end. It is swallowed
-// whole or not at all, and that is decided at its begin. A daemon that
-// came or went in the middle would otherwise leave the shell with half a
-// swipe: a begin without an end, and a workspace stuck part way across.
+// whole or not at all, and that is decided where it is first seen. A daemon
+// that came or went in the middle would otherwise leave the shell with half
+// a swipe: a begin without an end, and a workspace stuck part way across.
+//
+// It is first seen at its begin, as a rule. But while another actor holds
+// a grab, the shell's own drag of a window in the overview for one, events
+// do not pass the stage at all. A swipe that began then is first seen in
+// the middle, and is decided there: the shell would start a swipe of its
+// own from any update, with the daemon's button still held.
 export class SwipeFilter {
     constructor() {
+        this._open = false;
         this._swallowing = false;
     }
 
     // `phase` is 'begin', 'update' or 'end'. Whether to swallow the event.
     handle(phase, fingers, daemonPresent) {
-        if (phase === 'begin')
+        const firstSeen = phase === 'begin' ||
+            (!this._open && (phase === 'update' || phase === 'end'));
+        if (firstSeen) {
+            this._open = true;
             this._swallowing = fingers === DRAG_FINGERS && daemonPresent === true;
-        const swallow = this._swallowing;
+        }
+        const swallow = this._open && this._swallowing;
         if (phase === 'end')
-            this._swallowing = false;
+            this._open = false;
         return swallow;
     }
 }

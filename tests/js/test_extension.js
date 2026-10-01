@@ -462,15 +462,44 @@ test('each swipe is decided afresh at its begin', () => {
     same(whole(filter, 3, false), [false, false, false, false]);
 });
 
-test('nothing is swallowed once a swipe has ended', () => {
+test('a swipe whose begin was never seen is swallowed from where it is first seen', () => {
+    // While another actor holds a grab, a drag of a window in the overview
+    // for one, events do not pass the stage. A swipe that began then and
+    // is first seen in the middle would otherwise reach the shell, which
+    // starts a swipe of its own from any update.
     const filter = new SwipeFilter();
-    whole(filter, 3, true);
-    same(filter.handle('update', 3, true), false);
-    same(filter.handle('end', 3, true), false);
+    same(filter.handle('update', 3, true), true);
+    same(filter.handle('update', 3, true), true);
+    same(filter.handle('end', 3, true), true);
 });
 
-test('a swipe whose begin was never seen is not swallowed', () => {
+test('such a swipe is decided where it is first seen, and whole from there', () => {
+    const present = new SwipeFilter();
+    same(present.handle('update', 3, true), true);
+    same(present.handle('update', 3, false), true);
+    same(present.handle('end', 3, false), true);
+    const absent = new SwipeFilter();
+    same(absent.handle('update', 3, false), false);
+    same(absent.handle('update', 3, true), false);
+    same(absent.handle('end', 3, true), false);
+});
+
+test('a swipe of four fingers first seen in the middle is the shell\'s', () => {
     const filter = new SwipeFilter();
+    same(filter.handle('update', 4, true), false);
+    same(filter.handle('end', 4, true), false);
+});
+
+test('an end with no swipe open is swallowed and opens nothing', () => {
+    const filter = new SwipeFilter();
+    same(filter.handle('end', 3, true), true);
+    same(whole(filter, 4, true), [false, false, false, false]);
+});
+
+test('after a swipe has ended, the next events are a swipe of their own', () => {
+    const filter = new SwipeFilter();
+    whole(filter, 3, true);
+    same(filter.handle('update', 3, false), false);
     same(filter.handle('update', 3, true), false);
     same(filter.handle('end', 3, true), false);
 });
@@ -485,6 +514,7 @@ test('a begin on top of a swipe that never ended starts over', () => {
 test('a phase the filter does not know changes nothing and is never a begin', () => {
     const filter = new SwipeFilter();
     same(filter.handle(undefined, 3, true), false);
+    same(filter.handle('later', 3, true), false);
     same(filter.handle('begin', 3, true), true);
     same(filter.handle(undefined, 3, true), true);
     same(filter.handle('later', 3, true), true);
