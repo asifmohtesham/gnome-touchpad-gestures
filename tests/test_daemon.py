@@ -243,7 +243,7 @@ class FindTouchpadTest(unittest.TestCase):
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(daemon.check(), daemon.EXIT_NO_ACCESS)
 
-    def checked(self, loaded):
+    def checked(self, loaded, session="x11"):
         class Shell:
             def extension_version(self):
                 return loaded
@@ -251,6 +251,7 @@ class FindTouchpadTest(unittest.TestCase):
         self.having(event8=MULTITOUCH + (BUS_I2C,))
         with mock.patch.object(daemon, "Shell", Shell), \
                 mock.patch.object(daemon.os, "access", return_value=True), \
+                mock.patch.dict(daemon.os.environ, {"XDG_SESSION_TYPE": session}), \
                 contextlib.redirect_stdout(io.StringIO()) as stdout:
             status = daemon.check()
         return status, stdout.getvalue()
@@ -272,6 +273,29 @@ class FindTouchpadTest(unittest.TestCase):
         self.assertIn("0.0.1", said)
         self.assertIn(daemon.__version__, said)
         self.assertIn("Alt+F2", said)
+
+    def test_check_names_the_mode_it_would_run_in(self):
+        self.assertIn("session: x11, so every gesture", self.checked("0.0.1")[1])
+        self.assertIn("session: wayland, so three-finger drag only",
+                      self.checked("0.0.1", session="wayland")[1])
+
+    def test_check_on_wayland_says_to_log_out_not_to_restart_the_shell(self):
+        for loaded in (None, "0.0.1"):
+            with self.subTest(loaded=loaded):
+                status, said = self.checked(loaded, session="wayland")
+                self.assertEqual(status, 0)
+                self.assertIn("log out and back in", said)
+                self.assertNotIn("Alt+F2", said)
+
+    def test_check_on_wayland_says_what_a_silent_extension_costs_there(self):
+        said = self.checked(None, session="wayland")[1]
+        self.assertIn("three-finger drag is off", said)
+        self.assertNotIn("glides", said)
+
+    def test_check_on_wayland_says_the_extension_is_answering(self):
+        said = self.checked(daemon.__version__, session="wayland")[1]
+        self.assertIn(f"extension: answering, version {daemon.__version__}", said)
+        self.assertNotIn("log out", said)
 
     def test_the_three_exit_statuses_are_distinct(self):
         self.assertEqual(
@@ -746,6 +770,25 @@ class MachinesTest(unittest.TestCase):
         self.second.deadline = 7.0
         self.assertEqual(self.machines.next_deadline(), 7.0)
 
+
+class SessionModeTest(unittest.TestCase):
+    def test_wayland_is_where_only_the_drag_is_wanted(self):
+        self.assertEqual(daemon.session_mode({"XDG_SESSION_TYPE": "wayland"}), "drag")
+
+    def test_every_other_session_gets_every_gesture_as_before(self):
+        for session in ("x11", "", "tty", "mir", "Wayland", "wayland "):
+            with self.subTest(session=session):
+                self.assertEqual(
+                    daemon.session_mode({"XDG_SESSION_TYPE": session}), "full")
+
+    def test_no_word_of_the_session_is_every_gesture_too(self):
+        self.assertEqual(daemon.session_mode({}), "full")
+
+    def test_session_is_read_from_the_environment_when_none_is_given(self):
+        with mock.patch.dict(daemon.os.environ, {"XDG_SESSION_TYPE": "wayland"}):
+            self.assertEqual(daemon.session_mode(), "drag")
+        with mock.patch.dict(daemon.os.environ, {"XDG_SESSION_TYPE": "x11"}):
+            self.assertEqual(daemon.session_mode(), "full")
 
 if __name__ == "__main__":
     unittest.main()

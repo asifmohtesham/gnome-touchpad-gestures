@@ -11,7 +11,7 @@ from unittest import mock
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures import daemon
+from gnome_x11_touchpad_gestures import daemon, shell
 from gnome_x11_touchpad_gestures.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
 from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS
 
@@ -125,6 +125,21 @@ class FakeShell:
     overview_open = False
     follows_fingers = True
     swipes = []
+    made_with = None
+    three_free = True
+    asked_free = 0
+    announced = 0
+
+    def __init__(self, **kwargs):
+        FakeShell.made_with = kwargs
+
+    def announce(self):
+        FakeShell.announced += 1
+        return True
+
+    def three_fingers_free(self):
+        FakeShell.asked_free += 1
+        return FakeShell.three_free
 
     def show_overview(self, show):
         FakeShell.requests.append(show)
@@ -232,6 +247,10 @@ class MainTest(unittest.TestCase):
         FakeShell.overview_open = False
         FakeShell.follows_fingers = True
         FakeShell.swipes = []
+        FakeShell.made_with = None
+        FakeShell.three_free = True
+        FakeShell.asked_free = 0
+        FakeShell.announced = 0
         FakeUInput.cannot_be_created = set()
         FakeUInput.cannot_be_closed = set()
         FakeUInput.cannot_be_written = set()
@@ -248,14 +267,8 @@ class MainTest(unittest.TestCase):
 
     def test_startup_line_names_the_version(self):
         import gnome_x11_touchpad_gestures
-        touchpad = FakeTouchpad([interrupt])
-        with mock.patch.object(daemon, "find_touchpad", return_value=touchpad), \
-                mock.patch.object(daemon.os, "access", return_value=True), \
-                mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
-                mock.patch.object(daemon, "Shell", FakeShell), \
-                contextlib.redirect_stdout(io.StringIO()) as stdout:
-            daemon.main([])
-        self.assertIn(gnome_x11_touchpad_gestures.__version__, stdout.getvalue())
+        self.run_main(FakeTouchpad([interrupt]))
+        self.assertIn(gnome_x11_touchpad_gestures.__version__, self.said)
 
     def times_given_to_the_loop(self, kernel_agrees):
         touchpad = FakeTouchpad([interrupt])
@@ -277,7 +290,7 @@ class MainTest(unittest.TestCase):
         self.assertEqual(self.times_given_to_the_loop(True).of(Report(), 10.0), 9.99)
         self.assertEqual(self.times_given_to_the_loop(False).of(Report(), 10.0), 10.0)
 
-    def run_main(self, touchpad):
+    def run_main(self, touchpad, session="x11"):
         if touchpad is not None:
             # A test that goes wrong must fail, not leave the daemon waiting.
             watchdog = threading.Timer(5.0, touchpad.push, [interrupt])
@@ -288,8 +301,73 @@ class MainTest(unittest.TestCase):
                 mock.patch.object(daemon.os, "access", return_value=True), \
                 mock.patch.object(daemon.evdev, "UInput", self.make_uinput), \
                 mock.patch.object(daemon, "Shell", FakeShell), \
-                contextlib.redirect_stdout(io.StringIO()):
-            return daemon.main([])
+                mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": session}), \
+                contextlib.redirect_stdout(io.StringIO()) as stdout:
+            status = daemon.main([])
+        self.said = stdout.getvalue()
+        return status
+
+    def test_drag_mode_makes_the_pointer_and_no_other_device(self):
+        self.assertEqual(self.run_main(FakeTouchpad([interrupt]), "wayland"), 0)
+        self.assertEqual(set(self.devices), {POINTER})
+
+    def test_every_other_session_makes_all_three_as_before(self):
+        for session in ("x11", "tty", ""):
+            with self.subTest(session=session):
+                self.devices = {}
+                self.run_main(FakeTouchpad([interrupt]), session)
+                self.assertEqual(set(self.devices), {POINTER, KEYBOARD, WHEEL})
+
+    def test_drag_mode_drags(self):
+        touchpad = FakeTouchpad([land, move_after_settling, interrupt])
+        self.assertEqual(self.run_main(touchpad, "wayland"), 0)
+        self.assertEqual(self.button_values(), [1, 0])
+        self.assertEqual(FakeShell.asked_free, 1)
+
+    def test_drag_mode_presses_nothing_without_the_extension_s_leave(self):
+        FakeShell.three_free = False
+        touchpad = FakeTouchpad([land, move_after_settling, interrupt])
+        self.assertEqual(self.run_main(touchpad, "wayland"), 0)
+        # Never pressed; the only write is the release on shutdown.
+        self.assertEqual(self.button_values(), [0])
+
+    def test_drag_mode_takes_its_name_as_it_starts(self):
+        self.run_main(FakeTouchpad([interrupt]), "wayland")
+        self.assertEqual(FakeShell.announced, 1)
+
+    def test_no_name_is_taken_where_every_gesture_is_done(self):
+        self.run_main(FakeTouchpad([interrupt]), "x11")
+        self.assertEqual(FakeShell.announced, 0)
+
+    def test_drag_mode_leaves_swipes_and_the_overview_to_the_desktop(self):
+        touchpad = FakeTouchpad(swipe_left() + [interrupt])
+        self.assertEqual(self.run_main(touchpad, "wayland"), 0)
+        self.assertEqual(FakeShell.swipes, [])
+        self.assertEqual(FakeShell.requests, [])
+        self.assertNotIn(KEYBOARD, self.devices)
+
+    def test_drag_mode_survives_a_name_it_cannot_take(self):
+        with mock.patch.object(FakeShell, "announce", return_value=False):
+            self.assertEqual(self.run_main(FakeTouchpad([interrupt]), "wayland"), 0)
+
+    def test_shell_is_told_what_its_silence_costs_in_each_mode(self):
+        self.run_main(FakeTouchpad([interrupt]), "wayland")
+        self.assertEqual(FakeShell.made_with, {"complaint": shell.DRAG_COMPLAINT})
+        self.run_main(FakeTouchpad([interrupt]), "x11")
+        self.assertEqual(FakeShell.made_with, {})
+
+    def test_startup_line_names_the_mode(self):
+        self.run_main(FakeTouchpad([interrupt]), "wayland")
+        self.assertIn("three-finger drag only", self.said)
+        self.run_main(FakeTouchpad([interrupt]), "x11")
+        self.assertIn("every gesture", self.said)
+
+    def test_drag_mode_lets_go_of_everything_on_the_way_out(self):
+        touchpad = FakeTouchpad([land, move_after_settling, interrupt])
+        self.run_main(touchpad, "wayland")
+        self.assertEqual(self.button_values()[-1], 0)
+        self.assertTrue(self.devices[POINTER].closed)
+        self.assertTrue(touchpad.closed)
 
     def button_values(self):
         return [value for etype, code, value in

@@ -17,8 +17,10 @@ from evdev import ecodes as e
 from gnome_x11_touchpad_gestures import __version__
 from gnome_x11_touchpad_gestures.gestures import GestureMachine
 from gnome_x11_touchpad_gestures.momentum import MomentumMachine
-from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS, Output
-from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S, Shell
+from gnome_x11_touchpad_gestures.output import (
+    WORKSPACE_KEYS, DragOnly, NoDevice, Output)
+from gnome_x11_touchpad_gestures.shell import (
+    DRAG_COMPLAINT, OVERVIEW_TIMEOUT_S, Shell)
 from gnome_x11_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
@@ -43,6 +45,11 @@ EVIOCSCLOCKID = 0x400445A0
 # A frame said to be older than this when it is read is not believed. What
 # holds the daemon up is the shell, for two timeouts at the very most.
 STAMP_MAX_AGE_S = 4 * OVERVIEW_TIMEOUT_S
+# What the daemon does, which depends on what the desktop does itself.
+MODE_SAYS = {
+    "full": "every gesture",
+    "drag": "three-finger drag only",
+}
 NO_TOUCHPAD = (
     "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
     "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
@@ -54,6 +61,16 @@ NO_UINPUT = (
     f"gnome-x11-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
     "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
+
+
+def session_mode(environ=None) -> str:
+    """ "drag" where the desktop does the other gestures itself, else "full".
+
+    GNOME on Wayland has its own swipes and its toolkits their own momentum.
+    What it lacks is three-finger drag.
+    """
+    environ = os.environ if environ is None else environ
+    return "drag" if environ.get("XDG_SESSION_TYPE") == "wayland" else "full"
 
 
 class Machines:
@@ -243,10 +260,20 @@ def glides(shell) -> MomentumMachine:
 
 
 RESTART_THE_SHELL = "press Alt+F2, type r, press Enter"
+LOG_OUT = "log out and back in"
 
 
-def extension_state(loaded: str | None) -> str:
-    """What to tell someone about the shell extension. It is never required."""
+def extension_state(loaded: str | None, mode: str = "full") -> str:
+    """What to tell someone about the shell extension."""
+    if mode == "drag":
+        # A Wayland shell cannot be restarted in place.
+        if loaded is None:
+            return ("not answering, so three-finger drag is off. If it is "
+                    f"installed, {LOG_OUT} to load it")
+        if loaded != __version__:
+            return (f"answering, but the shell still runs version {loaded} "
+                    f"and this is {__version__}. To load it, {LOG_OUT}")
+        return f"answering, version {loaded}"
     if loaded is None:
         return ("not answering, so workspaces snap across and glides are held "
                 "back only in the overview. If it is installed, restart the "
@@ -267,7 +294,10 @@ def check() -> int:
         print(NO_UINPUT, file=sys.stderr)
         return EXIT_NO_ACCESS
     print(f"uinput: {UINPUT_PATH} writable")
-    print(f"extension: {extension_state(Shell().extension_version())}")
+    mode = session_mode()
+    session = os.environ.get("XDG_SESSION_TYPE") or "unknown"
+    print(f"session: {session}, so {MODE_SAYS[mode]}")
+    print(f"extension: {extension_state(Shell().extension_version(), mode)}")
     return 0
 
 
@@ -308,27 +338,39 @@ def main(argv=None) -> int:
             cleanup.callback(virtual.close)
             return virtual
 
+        mode = session_mode()
         pointer = create(
             {e.EV_REL: [e.REL_X, e.REL_Y], e.EV_KEY: [e.BTN_LEFT]},
             POINTER_NAME)
-        keyboard = create(
-            {e.EV_KEY: list(WORKSPACE_KEYS)}, KEYBOARD_NAME)
-        # The motion axes and buttons are never used; they are what makes
-        # libinput accept the device as a mouse and listen to its wheel.
-        wheel = create(
-            {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
-                        e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
-             e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
-            WHEEL_NAME)
-        shell = Shell()
-        output = Output(pointer, keyboard, wheel, shell)
+        if mode == "drag":
+            # The desktop does the other gestures, so their devices are
+            # not made and their actions not carried out.
+            shell = Shell(complaint=DRAG_COMPLAINT)
+            output = DragOnly(
+                Output(pointer, NoDevice(), NoDevice(), shell),
+                shell.three_fingers_free)
+            machine = GestureMachine()
+            shell.announce()
+        else:
+            keyboard = create(
+                {e.EV_KEY: list(WORKSPACE_KEYS)}, KEYBOARD_NAME)
+            # The motion axes and buttons are never used; they are what makes
+            # libinput accept the device as a mouse and listen to its wheel.
+            wheel = create(
+                {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL, e.REL_HWHEEL,
+                            e.REL_WHEEL_HI_RES, e.REL_HWHEEL_HI_RES],
+                 e.EV_KEY: [e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE]},
+                WHEEL_NAME)
+            shell = Shell()
+            output = Output(pointer, keyboard, wheel, shell)
+            machine = Machines(GestureMachine(), glides(shell))
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
         print(f"gnome-x11-touchpad-gestures {__version__}: "
+              f"{MODE_SAYS[mode]}, "
               f"listening on {device.path} ({device.name})", flush=True)
         try:
-            run(device, make_tracker(device),
-                Machines(GestureMachine(), glides(shell)), output,
+            run(device, make_tracker(device), machine, output,
                 times=FrameTimes(stamped=stamp_by_our_clock(device)))
         except KeyboardInterrupt:
             pass
