@@ -69,6 +69,19 @@ globalThis.global = {
     get_pointer: () => [640, 360, 0],
 };
 
+// Watches on the bus that are still set, so that one left behind shows.
+let watches = 0;
+const watchName = Gio.bus_watch_name_on_connection;
+const unwatchName = Gio.bus_unwatch_name;
+Gio.bus_watch_name_on_connection = (...args) => {
+    watches++;
+    return watchName(...args);
+};
+Gio.bus_unwatch_name = id => {
+    watches--;
+    return unwatchName(id);
+};
+
 const {default: GesturesExtension} = await import(`file://${directory}/extension.js`);
 const [, bytes] = GLib.file_get_contents(`${directory}/metadata.json`);
 const extension = new GesturesExtension(JSON.parse(new TextDecoder().decode(bytes)));
@@ -90,6 +103,7 @@ const CONTROL = `
     <method name="Pinch"><arg type="b" direction="out"/></method>
     <method name="Broken"><arg type="b" direction="out"/></method>
     <method name="Handlers"><arg type="u" direction="out"/></method>
+    <method name="Watches"><arg type="u" direction="out"/></method>
     <method name="Quit"/>
   </interface>
 </node>`;
@@ -143,6 +157,9 @@ const control = Gio.DBusExportedObject.wrapJSObject(CONTROL, {
     },
     Handlers() {
         return handlers.size;
+    },
+    Watches() {
+        return watches;
     },
     Quit() {
         loop.quit();

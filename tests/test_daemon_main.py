@@ -128,6 +128,7 @@ class FakeShell:
     made_with = None
     three_free = True
     asked_free = 0
+    asked_glide = 0
     announced = 0
 
     def __init__(self, **kwargs):
@@ -145,6 +146,7 @@ class FakeShell:
         FakeShell.requests.append(show)
 
     def may_glide(self):
+        FakeShell.asked_glide += 1
         return not FakeShell.overview_open
 
     def swipe_begin(self, t):
@@ -250,6 +252,7 @@ class MainTest(unittest.TestCase):
         FakeShell.made_with = None
         FakeShell.three_free = True
         FakeShell.asked_free = 0
+        FakeShell.asked_glide = 0
         FakeShell.announced = 0
         FakeUInput.cannot_be_created = set()
         FakeUInput.cannot_be_closed = set()
@@ -345,6 +348,17 @@ class MainTest(unittest.TestCase):
         self.assertEqual(FakeShell.swipes, [])
         self.assertEqual(FakeShell.requests, [])
         self.assertNotIn(KEYBOARD, self.devices)
+
+    def test_drag_mode_has_no_momentum_and_asks_the_shell_nothing_about_it(self):
+        touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift, interrupt])
+        self.assertEqual(self.run_main(touchpad, "wayland"), 0)
+        self.assertEqual(FakeShell.asked_glide, 0)
+        self.assertNotIn(WHEEL, self.devices)
+
+    def test_a_flick_does_ask_about_momentum_where_every_gesture_is_done(self):
+        touchpad = FakeTouchpad(two_finger_flick() + [both_fingers_lift, interrupt])
+        self.assertEqual(self.run_main(touchpad, "x11"), 0)
+        self.assertGreater(FakeShell.asked_glide, 0)
 
     def test_drag_mode_survives_a_name_it_cannot_take(self):
         with mock.patch.object(FakeShell, "announce", return_value=False):

@@ -49,6 +49,7 @@ def as_on_x11(bus, control, seen):
     # Nothing of the Wayland behaviour is to happen here.
     seen["three fingers free"] = Shell().three_fingers_free()
     seen["handlers"] = int(control("Handlers"))
+    seen["watches"] = int(control("Watches"))
     seen["three fingers"] = [
         bool(control("Swipe", phase, dbus.UInt32(3), signature="su"))
         for phase in ("begin", "update", "end")]
@@ -87,6 +88,7 @@ def as_on_wayland(bus, control, seen):
 
     seen["version"] = Shell().extension_version()
     seen["handlers"] = int(control("Handlers"))
+    seen["watches"] = int(control("Watches"))
     seen["free before the daemon"] = free()
     seen["swipe before the daemon"] = swipe()
 
@@ -125,12 +127,14 @@ def as_on_wayland(bus, control, seen):
 
     control("Disable")
     seen["handlers once off"] = int(control("Handlers"))
+    seen["watches once off"] = int(control("Watches"))
     seen["swipe once off"] = swipe()
     seen.update(json.loads(str(control("Seen"))))
     seen["version once off"] = Shell().extension_version()
     control("Enable")
     seen["version once on again"] = Shell().extension_version()
     seen["handlers once on again"] = int(control("Handlers"))
+    seen["watches once on again"] = int(control("Watches"))
     seen["free once on again"] = learns(True)
     seen["swipe once on again"] = swipe()
 

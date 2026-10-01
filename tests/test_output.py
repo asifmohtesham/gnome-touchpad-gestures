@@ -452,6 +452,22 @@ class DragOnlyTest(unittest.TestCase):
         self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
         self.assertEqual(self.shell.swipes, [])
 
+    def test_nothing_else_gets_through_in_the_middle_of_a_drag_either(self):
+        self.drag.emit([ButtonDown()])
+        self.drag.emit([Overview(show=True), SwitchWorkspace(Direction.NEXT),
+                        SwipeBegin(1.0), SwipeMove(1.01, -20.0),
+                        Scroll(0.0, 400.0, first=True)])
+        self.assertEqual(self.pointer.events, self.PRESS)
+        self.assertEqual(self.shell.requests, [])
+        self.assertEqual(self.shell.swipes, [])
+        self.assertEqual(self.shell.asked, 0)
+
+    def test_moves_after_a_drag_has_ended_are_not_a_drag(self):
+        self.drag.emit([ButtonDown(), ButtonUp()])
+        self.drag.emit([Move(50.0, 0.0)])
+        self.drag.emit([ButtonUp()])
+        self.assertEqual(self.pointer.events, self.PRESS + self.RELEASE)
+
     def test_release_all_lets_go_of_the_button(self):
         self.drag.emit([ButtonDown()])
         self.drag.release_all()

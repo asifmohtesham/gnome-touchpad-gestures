@@ -147,6 +147,7 @@ class ExtensionRunsTest(Ran):
     def test_on_x11_three_fingers_are_not_freed_and_no_swipe_is_swallowed(self):
         self.assertIs(self.seen["three fingers free"], False)
         self.assertEqual(self.seen["handlers"], 0)
+        self.assertEqual(self.seen["watches"], 0)
         self.assertEqual(self.seen["three fingers"], [False, False, False])
 
 
@@ -169,6 +170,11 @@ class OnWaylandTest(Ran):
 
     def test_it_listens_on_the_stage_once(self):
         self.assertEqual(self.seen["handlers"], 1)
+
+    def test_it_watches_the_bus_once_and_leaves_no_watch_behind(self):
+        self.assertEqual(self.seen["watches"], 1)
+        self.assertEqual(self.seen["watches once off"], 0)
+        self.assertEqual(self.seen["watches once on again"], 1)
 
     def test_nothing_is_freed_or_swallowed_before_the_daemon_is_there(self):
         self.assertIs(self.seen["free before the daemon"], False)

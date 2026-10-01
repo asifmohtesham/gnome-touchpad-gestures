@@ -80,7 +80,6 @@ export default class GesturesExtension extends Extension {
             global.stage.disconnect(this._captured);
         this._captured = null;
         this._filter = null;
-        this._daemonPresent = false;
     }
 
     // On X11: the shell's own workspace animation, fed by the daemon.
