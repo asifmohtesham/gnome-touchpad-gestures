@@ -16,10 +16,10 @@ import sys
 import tempfile
 import unittest
 
-import gnome_x11_touchpad_gestures
+import gnome_touchpad_gestures
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-UUID = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+UUID = "gnome-touchpad-gestures@asifmohtesham.github.io"
 IMPORTS = {
     "'gi://Meta'": "'./stand_in_meta.js'",
     "'resource:///org/gnome/shell/misc/config.js'": "'./stand_in_config.js'",
@@ -53,7 +53,7 @@ def copy_with_stand_ins(directory):
 def run_extension(mode, shell="50.1"):
     """Runs the extension in a session of the kind named, in a shell of the
     version named. What happened, or why not."""
-    with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as directory:
+    with tempfile.TemporaryDirectory(prefix="gnome-touchpad-gestures-test-") as directory:
         copy_with_stand_ins(directory)
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")}
@@ -96,7 +96,7 @@ class ExtensionRunsTest(Ran):
         self.assertEqual(self.seen["runner complaints"], "")
 
     def test_it_tells_its_version(self):
-        self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
+        self.assertEqual(self.seen["version"], gnome_touchpad_gestures.__version__)
 
     def test_pointer_over_a_window_or_an_application_s_popup(self):
         self.assertIs(self.seen["over"]["window"], True)
@@ -152,7 +152,7 @@ class ExtensionRunsTest(Ran):
 
     def test_switched_on_again_it_answers_again(self):
         self.assertEqual(self.seen["version once on again"],
-                         gnome_x11_touchpad_gestures.__version__)
+                         gnome_touchpad_gestures.__version__)
 
     def test_on_x11_three_fingers_are_not_freed_and_no_swipe_is_swallowed(self):
         self.assertIs(self.seen["three fingers free"], False)
@@ -175,7 +175,7 @@ class OnWaylandTest(Ran):
         self.assertEqual(self.seen["runner complaints"], "")
 
     def test_it_tells_its_version(self):
-        self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
+        self.assertEqual(self.seen["version"], gnome_touchpad_gestures.__version__)
 
     def test_it_puts_one_action_on_the_stage_and_connects_no_handler(self):
         # A handler would have thrown in the runner, and shown as a complaint.
@@ -240,7 +240,7 @@ class OnWaylandTest(Ran):
 
     def test_switched_on_again_it_finds_the_daemon_still_there(self):
         self.assertEqual(self.seen["version once on again"],
-                         gnome_x11_touchpad_gestures.__version__)
+                         gnome_touchpad_gestures.__version__)
         self.assertEqual(self.seen["handlers once on again"], 1)
         self.assertIs(self.seen["free once on again"], True)
         self.assertEqual(self.seen["swipe once on again"], self.WHOLE)
@@ -260,7 +260,7 @@ class OnWaylandInAnotherShellTest(Ran):
         self.assertEqual(self.seen["runner complaints"], "")
 
     def test_it_still_tells_its_version(self):
-        self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
+        self.assertEqual(self.seen["version"], gnome_touchpad_gestures.__version__)
 
     def test_it_listens_to_nothing_and_watches_nothing(self):
         self.assertEqual(self.seen["handlers"], 0)

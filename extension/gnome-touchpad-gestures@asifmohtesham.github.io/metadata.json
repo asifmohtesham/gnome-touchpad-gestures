@@ -1,0 +1,8 @@
+{
+    "uuid": "gnome-touchpad-gestures@asifmohtesham.github.io",
+    "name": "Touchpad gestures",
+    "description": "Works with the gnome-touchpad-gestures daemon and does nothing without it. On X11 it moves workspaces under your fingers and tells the daemon whether the pointer is over a window. On Wayland it keeps the shell's own swipes off three fingers while the daemon is running, so that three fingers can drag.",
+    "url": "https://github.com/asifmohtesham/gnome-touchpad-gestures",
+    "version-name": "0.4.0",
+    "shell-version": ["46", "50"]
+}

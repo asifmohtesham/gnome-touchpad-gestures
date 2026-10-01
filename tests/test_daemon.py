@@ -6,12 +6,12 @@ from collections import namedtuple
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures import daemon
-from gnome_x11_touchpad_gestures.daemon import (
+from gnome_touchpad_gestures import daemon
+from gnome_touchpad_gestures.daemon import (
     Machines, is_single_touch_pad, is_touchpad, preference, pump)
-from gnome_x11_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, State
-from gnome_x11_touchpad_gestures.momentum import MomentumMachine
-from gnome_x11_touchpad_gestures.slots import SlotTracker
+from gnome_touchpad_gestures.gestures import ButtonDown, ButtonUp, GestureMachine, State
+from gnome_touchpad_gestures.momentum import MomentumMachine
+from gnome_touchpad_gestures.slots import SlotTracker
 
 Event = namedtuple("Event", "type code value")
 
@@ -88,7 +88,7 @@ class DeviceNameTest(unittest.TestCase):
 
     def test_names_say_what_made_them(self):
         for name in self.NAMES:
-            self.assertTrue(name.startswith("gnome-x11-gestures "), name)
+            self.assertTrue(name.startswith("gnome-gestures "), name)
 
 
 class GlidesTest(unittest.TestCase):
@@ -401,7 +401,7 @@ class FrameTimesTest(unittest.TestCase):
                 self.assertEqual(times.of(self.event(at), now=10.0), 10.0)
 
     def test_frame_held_up_for_as_long_as_the_shell_may_take_is_believed(self):
-        from gnome_x11_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S
+        from gnome_touchpad_gestures.shell import OVERVIEW_TIMEOUT_S
         times = daemon.FrameTimes(stamped=True)
         held_up = 2 * OVERVIEW_TIMEOUT_S
         self.assertLess(held_up, daemon.STAMP_MAX_AGE_S)

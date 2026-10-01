@@ -1,4 +1,4 @@
-# gnome-x11-touchpad-gestures
+# gnome-touchpad-gestures
 
 macOS-style touchpad gestures for GNOME: three-finger drag everywhere, and
 on X11 the four-finger swipes and momentum scrolling that GNOME lacks there.
@@ -31,12 +31,13 @@ Wayland:
 | Any touch during a glide | The glide stops at once |
 | Flick over the dock, the top bar, a menu or the overview | No glide. A wheel steps through things there |
 
-Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
+Design: `docs/superpowers/specs/2026-09-27-gnome-touchpad-gestures-design.md`
 for the X11 mode, `docs/superpowers/specs/2026-10-02-wayland-drag-mode-design.md`
 for the Wayland one.
 
-Earlier versions were called `finger-drag`. Installing this one removes
-what they installed.
+Earlier versions were called `finger-drag` and then
+`gnome-x11-touchpad-gestures`. Installing this one removes what they
+installed.
 
 ## Status
 
@@ -74,12 +75,12 @@ longer tried by hand there; it rests on the test suite.
 Clone it wherever you keep code, then run the installer from there:
 
 ```bash
-git clone https://github.com/asifmohtesham/gnome-x11-touchpad-gestures.git
-cd gnome-x11-touchpad-gestures
+git clone https://github.com/asifmohtesham/gnome-touchpad-gestures.git
+cd gnome-touchpad-gestures
 ./install/install.sh
 ```
 
-The installer copies the program to `~/.local/share/gnome-x11-touchpad-gestures`, and the
+The installer copies the program to `~/.local/share/gnome-touchpad-gestures`, and the
 service runs that copy. Two things follow:
 
 - **The repository can live anywhere.** Move it, rename it or delete it
@@ -135,7 +136,7 @@ written for GNOME Shell 46. Should it misbehave, switch
 it off:
 
 ```bash
-gnome-extensions disable gnome-x11-touchpad-gestures@asifmohtesham.github.io
+gnome-extensions disable gnome-touchpad-gestures@asifmohtesham.github.io
 ```
 
 That takes effect at once, without restarting the shell, and the gestures
@@ -157,29 +158,29 @@ fingers while the daemon runs. Stop the daemon and three do them again, at
 once and without logging out:
 
 ```bash
-systemctl --user stop gnome-x11-touchpad-gestures
+systemctl --user stop gnome-touchpad-gestures
 ```
 
 The extension never presses a button or moves the pointer. If it should
 misbehave, the worst it can do is swallow three-finger swipes, and either
 the command above or
-`gnome-extensions disable gnome-x11-touchpad-gestures@asifmohtesham.github.io`
+`gnome-extensions disable gnome-touchpad-gestures@asifmohtesham.github.io`
 puts them back.
 
 ### What the installer changes
 
 - **One udev rule**,
-  `/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules`. It lets the user
+  `/etc/udev/rules.d/71-gnome-touchpad-gestures.rules`. It lets the user
   sitting at the machine read its touchpads and create virtual input
   devices, without joining the `input` group, which would expose the
   keyboard too. A device that is a keyboard as well as a touchpad is left
   alone for the same reason.
 - **One user service**,
-  `~/.config/systemd/user/gnome-x11-touchpad-gestures.service`. It starts
+  `~/.config/systemd/user/gnome-touchpad-gestures.service`. It starts
   with your graphical session, and only if that session is X11 or Wayland.
-- **The program**, copied to `~/.local/share/gnome-x11-touchpad-gestures`.
+- **The program**, copied to `~/.local/share/gnome-touchpad-gestures`.
 - **The shell extension**, copied to
-  `~/.local/share/gnome-shell/extensions/gnome-x11-touchpad-gestures@asifmohtesham.github.io`
+  `~/.local/share/gnome-shell/extensions/gnome-touchpad-gestures@asifmohtesham.github.io`
   and switched on. If the shell cannot be asked to, its name is written
   into the shell's settings, `enabled-extensions`, and taken out of
   `disabled-extensions`.
@@ -219,7 +220,7 @@ uninstaller takes that away too until the next reboot.
 
 ## Tuning
 
-Edit the constants at the top of `gnome_x11_touchpad_gestures/gestures.py`, then run
+Edit the constants at the top of `gnome_touchpad_gestures/gestures.py`, then run
 `./install/install.sh` to install the change. It restarts the service and,
 with the udev rule already in place, does not ask for a password.
 On Wayland only the three `DRAG_` constants and `POINTER_COUNTS_PER_MM` have
@@ -237,13 +238,13 @@ any effect.
 | `SWIPE_AXIS_RATIO` | 1.5 | require a straighter swipe |
 | `SWIPE_TOGETHER_MM` | 2.0 | compare the fingers over a longer stretch before a swipe counts |
 
-One more is in `gnome_x11_touchpad_gestures/motion.py`. `TOGETHER_RATIO`
+One more is in `gnome_touchpad_gestures/motion.py`. `TOGETHER_RATIO`
 (0.5) is how much of the shared motion each finger must cover for a swipe or
 a scroll to count. Lower it if four-finger swipes fail when one finger lags;
 raise it if resting fingers are being taken for part of a gesture.
 
 Momentum scrolling has its own constants at the top of
-`gnome_x11_touchpad_gestures/momentum.py`:
+`gnome_touchpad_gestures/momentum.py`:
 
 | Constant | Default | Raise it to... |
 |---|---|---|
@@ -266,9 +267,9 @@ repeated flicks, edit `flick_boost()`.
 ## Troubleshooting
 
 ```bash
-systemctl --user status gnome-x11-touchpad-gestures      # is it running?
-journalctl --user -u gnome-x11-touchpad-gestures -n 20   # what did it say?
-python3 -m gnome_x11_touchpad_gestures.daemon --check
+systemctl --user status gnome-touchpad-gestures      # is it running?
+journalctl --user -u gnome-touchpad-gestures -n 20   # what did it say?
+python3 -m gnome_touchpad_gestures.daemon --check
 ```
 
 `--check` tests device access with the code in the repository, not the
@@ -284,8 +285,8 @@ installed copy. Its exit status says what it found:
 ## Versions
 
 ```bash
-python3 -m gnome_x11_touchpad_gestures.daemon --version       # the repository's
-journalctl --user -u gnome-x11-touchpad-gestures -n 5          # the one running
+python3 -m gnome_touchpad_gestures.daemon --version       # the repository's
+journalctl --user -u gnome-touchpad-gestures -n 5          # the one running
 ```
 
 The service logs its version when it starts. `CHANGELOG.md` says what each
@@ -315,7 +316,7 @@ On Wayland, after logging out and in:
 - [ ] Lift and re-place fingers mid-drag; the drag continues.
 - [ ] Three-finger tap still pastes (middle click).
 - [ ] A four-finger swipe switches workspace and opens the overview.
-- [ ] `systemctl --user stop gnome-x11-touchpad-gestures`: a three-finger
+- [ ] `systemctl --user stop gnome-touchpad-gestures`: a three-finger
       swipe is GNOME's again. Start it: the drag is back.
 - [ ] `gnome-extensions disable` with the service running: no drag, and a
       three-finger swipe is GNOME's.
@@ -340,7 +341,7 @@ On X11:
 - [ ] A two-finger flick with the pointer over the dock or the top bar
       does not glide.
 - [ ] Suspend and resume; gestures work again within a few seconds.
-- [ ] `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
+- [ ] `systemctl --user stop gnome-touchpad-gestures` mid-drag releases the button.
 - [ ] Four-finger swipe up opens the overview; swiping up again leaves it
       open.
 - [ ] Four-finger swipe down closes the overview.
@@ -424,7 +425,7 @@ On X11:
 - A glide does not know where the page ends. In GTK apps the glow or
   bounce at the end of a page can stay until the glide is over. Touch the
   pad to end it sooner.
-- The virtual devices are called `gnome-x11-gestures pointer`, `keyboard`
+- The virtual devices are called `gnome-gestures pointer`, `keyboard`
   and `wheel`, without the word "touchpad". GNOME decides what kind of device
   something is from words in its name, and would give a "touchpad" wheel the
   touchpad's settings.
@@ -436,7 +437,7 @@ On X11:
   chosen that.
 - GNOME treats the virtual wheel as a mouse. Glide direction assumes
   natural scrolling is on for the touchpad and off for mice. If yours
-  differ, set `NATURAL_SCROLL` in `gnome_x11_touchpad_gestures/momentum.py`.
+  differ, set `NATURAL_SCROLL` in `gnome_touchpad_gestures/momentum.py`.
 - X applies its mouse acceleration to the virtual pointer, so drag speed
   also depends on the mouse speed set in GNOME Settings.
   `POINTER_COUNTS_PER_MM` is tuned with that in place.

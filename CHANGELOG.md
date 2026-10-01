@@ -4,6 +4,21 @@ What changed in each version, newest first. Versions are three numbers:
 the first changes when something you rely on stops working the same way, the
 second when something is added, the third when something is fixed.
 
+## 0.4.0 (2026-10-02)
+
+Changed
+- The project is now called `gnome-touchpad-gestures`. It was
+  `gnome-x11-touchpad-gestures`, which stopped being true when it gained a
+  mode for Wayland. The service, the installed program, the udev rule, the
+  extension and the Python package all take the new name, and the virtual
+  devices are now `gnome-gestures pointer`, `keyboard` and `wheel`.
+- Installing this version removes what the former name installed. The
+  installer asks for your password once, to put the udev rule under its
+  new name. On Wayland, log out and back in afterwards; on X11, restart
+  the shell.
+
+The gestures themselves have not changed.
+
 ## 0.3.1 (2026-10-02)
 
 Fixed

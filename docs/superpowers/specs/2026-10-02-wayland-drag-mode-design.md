@@ -2,8 +2,8 @@
 
 Date: 2026-10-02. Target version: 0.3.0.
 
-This adds a second mode to gnome-x11-touchpad-gestures. The first design,
-`2026-09-27-gnome-x11-touchpad-gestures-design.md`, still describes the X11
+This adds a second mode to gnome-touchpad-gestures. The first design,
+`2026-09-27-gnome-touchpad-gestures-design.md`, still describes the X11
 mode, which this leaves as it is.
 
 ## Why
@@ -229,8 +229,8 @@ is swallow three-finger swipes when it should not. Either of these puts
 GNOME's swipes back at once, without a logout:
 
 ```
-systemctl --user stop gnome-x11-touchpad-gestures
-gnome-extensions disable gnome-x11-touchpad-gestures@asifmohtesham.github.io
+systemctl --user stop gnome-touchpad-gestures
+gnome-extensions disable gnome-touchpad-gestures@asifmohtesham.github.io
 ```
 
 The daemon releases the button on its way out, as it always has.

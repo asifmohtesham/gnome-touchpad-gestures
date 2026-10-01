@@ -14,14 +14,14 @@ import time
 import evdev
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures import __version__
-from gnome_x11_touchpad_gestures.gestures import GestureMachine
-from gnome_x11_touchpad_gestures.momentum import MomentumMachine
-from gnome_x11_touchpad_gestures.output import (
+from gnome_touchpad_gestures import __version__
+from gnome_touchpad_gestures.gestures import GestureMachine
+from gnome_touchpad_gestures.momentum import MomentumMachine
+from gnome_touchpad_gestures.output import (
     WORKSPACE_KEYS, DragOnly, NoDevice, Output)
-from gnome_x11_touchpad_gestures.shell import (
+from gnome_touchpad_gestures.shell import (
     DRAG_COMPLAINT, DRAG_RETRY_S, OVERVIEW_TIMEOUT_S, Shell)
-from gnome_x11_touchpad_gestures.slots import (
+from gnome_touchpad_gestures.slots import (
     FALLBACK_HEIGHT_MM, FALLBACK_WIDTH_MM, SlotTracker, units_per_mm)
 
 UINPUT_PATH = "/dev/uinput"
@@ -29,9 +29,9 @@ UINPUT_PATH = "/dev/uinput"
 # devices by words in their names, and "touchpad" in a name gets a device the
 # touchpad's settings: natural scrolling would turn every glide round, and
 # the pointer would take the touchpad's speed.
-POINTER_NAME = "gnome-x11-gestures pointer"
-KEYBOARD_NAME = "gnome-x11-gestures keyboard"
-WHEEL_NAME = "gnome-x11-gestures wheel"
+POINTER_NAME = "gnome-gestures pointer"
+KEYBOARD_NAME = "gnome-gestures keyboard"
+WHEEL_NAME = "gnome-gestures wheel"
 # Distinct from a crash (1) or a usage error (2) so that install.sh can tell
 # "log out and back in" apart from every other failure.
 EXIT_NO_ACCESS = 3
@@ -51,15 +51,15 @@ MODE_SAYS = {
     "drag": "three-finger drag only",
 }
 NO_TOUCHPAD = (
-    "gnome-x11-touchpad-gestures: no accessible touchpad found. Is "
-    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
+    "gnome-touchpad-gestures: no accessible touchpad found. Is "
+    "/etc/udev/rules.d/71-gnome-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 UNSUPPORTED = (
-    "gnome-x11-touchpad-gestures: a touchpad was found, but it does not report "
+    "gnome-touchpad-gestures: a touchpad was found, but it does not report "
     "each finger separately, so gestures cannot be read from it.")
 NO_UINPUT = (
-    f"gnome-x11-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
-    "/etc/udev/rules.d/71-gnome-x11-touchpad-gestures.rules installed? "
+    f"gnome-touchpad-gestures: cannot write to {UINPUT_PATH}. Is "
+    "/etc/udev/rules.d/71-gnome-touchpad-gestures.rules installed? "
     "Log out and back in after installing it.")
 
 
@@ -307,12 +307,12 @@ def _terminate(signum, frame):
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
-        prog="gnome-x11-touchpad-gestures",
+        prog="gnome-touchpad-gestures",
         description="Three-finger drag; on X11 also four-finger swipes "
                     "and momentum scrolling.")
     parser.add_argument(
         "--version", action="version",
-        version=f"gnome-x11-touchpad-gestures {__version__}")
+        version=f"gnome-touchpad-gestures {__version__}")
     parser.add_argument(
         "--check", action="store_true",
         help="verify access to the touchpad and uinput, then exit")
@@ -366,7 +366,7 @@ def main(argv=None) -> int:
             machine = Machines(GestureMachine(), glides(shell))
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
-        print(f"gnome-x11-touchpad-gestures {__version__}: "
+        print(f"gnome-touchpad-gestures {__version__}: "
               f"{MODE_SAYS[mode]}, "
               f"listening on {device.path} ({device.name})", flush=True)
         try:

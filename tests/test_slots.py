@@ -2,7 +2,7 @@ import unittest
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures.slots import MT_TOOL_PALM, Frame, SlotTracker, units_per_mm
+from gnome_touchpad_gestures.slots import MT_TOOL_PALM, Frame, SlotTracker, units_per_mm
 
 
 def touch(tracker, slot, tracking_id, x=None, y=None):

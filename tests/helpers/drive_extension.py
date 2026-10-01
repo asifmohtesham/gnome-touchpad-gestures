@@ -14,7 +14,7 @@ import dbus
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from gnome_x11_touchpad_gestures.shell import (  # noqa: E402
+from gnome_touchpad_gestures.shell import (  # noqa: E402
     DAEMON_NAME, EXTENSION_INTERFACE, EXTENSION_PATH, Shell)
 
 

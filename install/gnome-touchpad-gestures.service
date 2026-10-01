@@ -9,13 +9,13 @@ ConditionEnvironment=|XDG_SESSION_TYPE=wayland
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
+ExecStart=/usr/bin/python3 -m gnome_touchpad_gestures.daemon
 # install.sh copies the program here. %h is the home directory, worked out
 # by systemd itself, so nothing about where the repository lives, or what
 # its path contains, ends up in this file.
-WorkingDirectory=%h/.local/share/gnome-x11-touchpad-gestures
+WorkingDirectory=%h/.local/share/gnome-touchpad-gestures
 # Python may be told not to look in the working directory (PYTHONSAFEPATH).
-Environment=PYTHONPATH=%h/.local/share/gnome-x11-touchpad-gestures
+Environment=PYTHONPATH=%h/.local/share/gnome-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 

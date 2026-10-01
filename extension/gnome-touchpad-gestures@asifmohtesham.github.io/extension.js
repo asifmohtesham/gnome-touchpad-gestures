@@ -1,4 +1,4 @@
-// Works with the gnome-x11-touchpad-gestures daemon. On X11 it answers the
+// Works with the gnome-touchpad-gestures daemon. On X11 it answers the
 // daemon over D-Bus; on Wayland it keeps the shell's own swipes off three
 // fingers while the daemon is there. Everything that can be worked out
 // without the shell is in gestures.js; this file only hands it the pieces
@@ -138,7 +138,7 @@ export default class GesturesExtension extends Extension {
         // shell's own swipe handling, and before anything else.
         this._swallow = new Swallow(event => this._onTouchpad(event));
         global.stage.add_action_full(
-            'gnome-x11-touchpad-gestures', Clutter.EventPhase.CAPTURE,
+            'gnome-touchpad-gestures', Clutter.EventPhase.CAPTURE,
             this._swallow);
     }
 

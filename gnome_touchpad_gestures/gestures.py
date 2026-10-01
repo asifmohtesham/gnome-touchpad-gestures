@@ -5,7 +5,7 @@ import enum
 import math
 from dataclasses import dataclass
 
-from gnome_x11_touchpad_gestures.motion import moving_together
+from gnome_touchpad_gestures.motion import moving_together
 
 DRAG_START_MM = 2.0
 DRAG_SETTLE_S = 0.05

@@ -4,11 +4,11 @@ import pathlib
 import re
 import unittest
 
-import gnome_x11_touchpad_gestures
-from gnome_x11_touchpad_gestures import daemon
+import gnome_touchpad_gestures
+from gnome_touchpad_gestures import daemon
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-VERSION = gnome_x11_touchpad_gestures.__version__
+VERSION = gnome_touchpad_gestures.__version__
 
 
 class VersionTest(unittest.TestCase):
@@ -21,7 +21,7 @@ class VersionTest(unittest.TestCase):
                 daemon.main(["--version"])
         self.assertEqual(raised.exception.code, 0)
         self.assertEqual(stdout.getvalue().strip(),
-                         f"gnome-x11-touchpad-gestures {VERSION}")
+                         f"gnome-touchpad-gestures {VERSION}")
 
     def test_newest_entry_in_the_changelog_is_this_version(self):
         changelog = (REPO / "CHANGELOG.md").read_text()

@@ -5,10 +5,10 @@ import time
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures.gestures import (
+from gnome_touchpad_gestures.gestures import (
     SWIPE_FULL_MM, Action, ButtonDown, ButtonUp, Direction, Move, Overview, Snap,
     SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
-from gnome_x11_touchpad_gestures.momentum import Scroll
+from gnome_touchpad_gestures.momentum import Scroll
 
 WORKSPACE_KEYS = (e.KEY_LEFTCTRL, e.KEY_LEFTALT, e.KEY_LEFT, e.KEY_RIGHT)
 KEY_HOLD_S = 0.01
