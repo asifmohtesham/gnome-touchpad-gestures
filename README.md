@@ -35,8 +35,9 @@ Design: `docs/superpowers/specs/2026-09-27-gnome-touchpad-gestures-design.md`
 for the X11 mode, `docs/superpowers/specs/2026-10-02-wayland-drag-mode-design.md`
 for the Wayland one.
 
-Earlier versions were called `finger-drag`. Installing this one removes
-what they installed.
+Earlier versions were called `finger-drag` and then
+`gnome-x11-touchpad-gestures`. Installing this one removes what they
+installed.
 
 ## Status
 

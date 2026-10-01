@@ -596,15 +596,16 @@ class SealTest(unittest.TestCase):
                 self.assertNotIn(name, result.stdout)
 
 
-class UpgradeTest(unittest.TestCase):
+class Upgrade:
     """The project was once installed under another name. An upgrade clears it."""
 
-    FORMER = "finger-drag"
+    FORMER = None
+    PACKAGE = None
     ACCESS = 'check_access() { return 0; }; '
 
     def plant(self, home):
         unit = home / ".config/systemd/user" / f"{self.FORMER}.service"
-        program = home / ".local/share" / self.FORMER / "finger_drag"
+        program = home / ".local/share" / self.FORMER / self.PACKAGE
         unit.parent.mkdir(parents=True)
         unit.write_text("[Service]\n")
         program.mkdir(parents=True)
@@ -657,6 +658,76 @@ class UpgradeTest(unittest.TestCase):
             self.assertIn(f"sudo rm -f {rules}/71-{self.FORMER}.rules", log)
             self.assertIn(f"sudo rm -f {rules}/{RULE}", log)
             self.assertIn(f"systemctl --user disable --now {self.FORMER}.service", log)
+
+
+class UpgradeFromFingerDragTest(Upgrade, unittest.TestCase):
+    FORMER = "finger-drag"
+    PACKAGE = "finger_drag"
+
+
+class UpgradeFromTheNameWithX11Test(Upgrade, unittest.TestCase):
+    FORMER = "gnome-x11-touchpad-gestures"
+    PACKAGE = "gnome_x11_touchpad_gestures"
+    EXTENSION = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+
+    def planted(self, home):
+        directory = home / EXTENSIONS / self.EXTENSION
+        directory.mkdir(parents=True)
+        (directory / "extension.js").write_text("// the former one")
+        return directory
+
+    def lists(self):
+        return dict(enabled=f"['ubuntu-dock@ubuntu.com', '{self.EXTENSION}']",
+                    disabled=f"['{self.EXTENSION}']")
+
+    def test_install_removes_the_former_extension_and_its_name_from_the_settings(self):
+        # Left in place it would load beside the new one, and both would
+        # answer the daemon at the same place on the bus.
+        with recording_sandbox(enabling_works=False, **self.lists()) as (home, run, commands):
+            former = self.planted(home)
+            result = run("install.sh", "install_service")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(former.exists())
+            self.assertTrue((home / EXTENSIONS / EXTENSION / "extension.js").exists())
+            log = commands()
+            self.assertIn(f"gnome-extensions disable {self.EXTENSION}", log)
+            written = [c for c in log if c.startswith("gsettings set")]
+            self.assertEqual(written[:2], [
+                "gsettings set org.gnome.shell enabled-extensions "
+                "['ubuntu-dock@ubuntu.com']",
+                "gsettings set org.gnome.shell disabled-extensions []"])
+            # (The stand-in for gsettings always gives the same list back,
+            # so what is written after this says nothing about the former.)
+
+    def test_install_with_no_former_extension_asks_nothing_about_one(self):
+        with recording_sandbox() as (_, run, commands):
+            run("install.sh", "install_service")
+            self.assertNotIn(self.EXTENSION, " ".join(commands()))
+
+    def test_uninstall_removes_the_former_extension_too(self):
+        with recording_sandbox(enabling_works=False, **self.lists()) as (home, run, commands):
+            former = self.planted(home)
+            result = run("uninstall.sh", "main_as 1000")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(former.exists())
+            written = [c for c in commands() if c.startswith("gsettings set")]
+            self.assertIn("gsettings set org.gnome.shell enabled-extensions "
+                          "['ubuntu-dock@ubuntu.com']", written)
+            self.assertIn("gsettings set org.gnome.shell disabled-extensions []", written)
+
+    def test_both_former_rules_are_removed_when_both_are_there(self):
+        with recording_sandbox() as (home, run, commands):
+            rules = self.rules(home, RULE, "71-finger-drag.rules", f"71-{self.FORMER}.rules")
+            result = run("install.sh", self.ACCESS + 'rules_dir="$1"; main_as 1000', rules)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            log = commands()
+            self.assertIn(f"sudo rm -f {rules}/71-finger-drag.rules", log)
+            self.assertIn(f"sudo rm -f {rules}/71-{self.FORMER}.rules", log)
+
+    def test_readme_names_both_former_names(self):
+        readme = " ".join((REPO / "README.md").read_text().split())
+        self.assertIn("`finger-drag`", readme)
+        self.assertIn("`gnome-x11-touchpad-gestures`", readme)
 
 
 class SudoOnlyWhenNeededTest(unittest.TestCase):

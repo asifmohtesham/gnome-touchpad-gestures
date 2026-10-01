@@ -16,14 +16,13 @@ program_dir="$HOME/.local/share/gnome-touchpad-gestures"
 # overview. On Wayland there is no drag without it.
 extension="gnome-touchpad-gestures@asifmohtesham.github.io"
 extensions_dir="$HOME/.local/share/gnome-shell/extensions"
-# What this project installed when it was called finger-drag. Left in place,
-# the old service would run beside the new one and every gesture would
-# happen twice, and the old rule would go on granting access after an
-# uninstall. An upgrade removes all three.
-former="finger-drag"
-former_unit="$unit_dir/$former.service"
-former_program="$HOME/.local/share/$former"
-former_rule="71-$former.rules"
+# The names this project has been installed under before. Left in place,
+# an old service would run beside the new one and every gesture would
+# happen twice, an old rule would go on granting access after an uninstall,
+# and an old extension would answer the daemon beside the new one. An
+# upgrade removes them all.
+formers=("finger-drag" "gnome-x11-touchpad-gestures")
+former_extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
 # Exit status of `gnome_touchpad_gestures.daemon --check` when device access is missing.
 no_access=3
 # ... and when the touchpad cannot tell fingers apart.
@@ -78,7 +77,10 @@ check_access() {
 # for any reason other than missing access is not something sudo can fix.
 needs_sudo() {
     cmp -s "$here/$rule" "$rules_dir/$rule" || return 0
-    [ ! -e "$rules_dir/$former_rule" ] || return 0
+    local former
+    for former in "${formers[@]}"; do
+        [ ! -e "$rules_dir/71-$former.rules" ] || return 0
+    done
     local status=0
     check_access >/dev/null 2>&1 || status=$?
     [ "$status" -eq "$no_access" ]
@@ -235,11 +237,25 @@ install_extension() {
 }
 
 remove_former_service() {
-    if [ -e "$former_unit" ] || [ -e "$former_program" ]; then
-        echo "Removing the version installed as $former..."
-        systemctl --user disable --now "$former.service" 2>/dev/null || true
-        rm -f "$former_unit"
-        rm -rf "$former_program"
+    local former
+    for former in "${formers[@]}"; do
+        local former_unit="$unit_dir/$former.service"
+        local former_program="$HOME/.local/share/$former"
+        if [ -e "$former_unit" ] || [ -e "$former_program" ]; then
+            echo "Removing the version installed as $former..."
+            systemctl --user disable --now "$former.service" 2>/dev/null || true
+            rm -f "$former_unit"
+            rm -rf "$former_program"
+        fi
+    done
+    if [ -e "$extensions_dir/$former_extension" ]; then
+        # The functions below work on $extension, which for their duration
+        # is the former one.
+        local extension="$former_extension"
+        gnome-extensions disable "$extension" 2>/dev/null || true
+        list_extension enabled-extensions without
+        list_extension disabled-extensions without
+        rm -rf "${extensions_dir:?}/$extension"
     fi
 }
 
@@ -274,9 +290,12 @@ main_as() {
         if ! cmp -s "$here/$rule" "$rules_dir/$rule"; then
             sudo install -m 0644 "$here/$rule" "$rules_dir/$rule"
         fi
-        if [ -e "$rules_dir/$former_rule" ]; then
-            sudo rm -f "$rules_dir/$former_rule"
-        fi
+        local former
+        for former in "${formers[@]}"; do
+            if [ -e "$rules_dir/71-$former.rules" ]; then
+                sudo rm -f "$rules_dir/71-$former.rules"
+            fi
+        done
         sudo udevadm control --reload
         sudo udevadm trigger --action=change --subsystem-match=misc --sysname-match=uinput
         # Only the touchpad: a change event makes X remove and re-add the

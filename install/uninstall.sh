@@ -4,8 +4,9 @@ set -euo pipefail
 
 rules_dir="/etc/udev/rules.d"
 rule="71-gnome-touchpad-gestures.rules"
-# What this project installed when it was called finger-drag.
-former="finger-drag"
+# The names this project has been installed under before.
+formers=("finger-drag" "gnome-x11-touchpad-gestures")
+former_extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
 unit="gnome-touchpad-gestures.service"
 unit_file="$HOME/.config/systemd/user/$unit"
 program_dir="$HOME/.local/share/gnome-touchpad-gestures"
@@ -52,6 +53,17 @@ unlist_extension() {
     fi
 }
 
+# The extension as it was called before the project was renamed.
+remove_former_extension() {
+    # The functions above work on $extension, which for their duration is
+    # the former one.
+    local extension="$former_extension"
+    gnome-extensions disable "$extension" 2>/dev/null || true
+    unlist_extension enabled-extensions
+    unlist_extension disabled-extensions
+    rm -rf "$(dirname "$extension_dir")/$extension"
+}
+
 refuse_root() {
     local uid="$1"
     if [ "$uid" -eq 0 ]; then
@@ -66,10 +78,15 @@ main_as() {
     refuse_root "$1"
     echo "Stopping and removing the user service and the program..."
     systemctl --user disable --now "$unit" 2>/dev/null || true
-    systemctl --user disable --now "$former.service" 2>/dev/null || true
-    rm -f "$unit_file" "$HOME/.config/systemd/user/$former.service"
+    rm -f "$unit_file"
+    rm -rf "$program_dir"
+    local former
+    for former in "${formers[@]}"; do
+        systemctl --user disable --now "$former.service" 2>/dev/null || true
+        rm -f "$HOME/.config/systemd/user/$former.service"
+        rm -rf "$HOME/.local/share/$former"
+    done
     systemctl --user daemon-reload
-    rm -rf "$program_dir" "$HOME/.local/share/$former"
 
     echo "Switching off and removing the shell extension..."
     # The shell switches it off at once, if it has it loaded, and writes it
@@ -80,10 +97,13 @@ main_as() {
     unlist_extension enabled-extensions
     unlist_extension disabled-extensions
     rm -rf "$extension_dir"
+    remove_former_extension
 
     echo "Removing udev rule and device access (needs sudo)..."
     sudo rm -f "$rules_dir/$rule"
-    sudo rm -f "$rules_dir/71-$former.rules"
+    for former in "${formers[@]}"; do
+        sudo rm -f "$rules_dir/71-$former.rules"
+    done
     sudo udevadm control --reload
     # udev remembers that it tagged these devices, and the login manager would
     # grant access again from that memory. A fresh look at them clears it.
