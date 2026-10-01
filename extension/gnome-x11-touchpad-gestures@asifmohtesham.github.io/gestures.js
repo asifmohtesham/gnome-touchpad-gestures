@@ -152,3 +152,32 @@ export function isOverWindow(actor, windowGroups, overviewVisible, stage) {
     }
     return false;
 }
+
+// How many fingers drag. A swipe of this many is the daemon's.
+export const DRAG_FINGERS = 3;
+
+// Decides which touchpad swipes the shell is not to see.
+//
+// Where the daemon drags with three fingers, the shell's own swipes, which
+// it makes of three fingers or more, would land on top of the drag. They
+// are kept from it for as long as the daemon is there.
+//
+// A swipe is a run of events: a begin, updates, an end. It is swallowed
+// whole or not at all, and that is decided at its begin. A daemon that
+// came or went in the middle would otherwise leave the shell with half a
+// swipe: a begin without an end, and a workspace stuck part way across.
+export class SwipeFilter {
+    constructor() {
+        this._swallowing = false;
+    }
+
+    // `phase` is 'begin', 'update' or 'end'. Whether to swallow the event.
+    handle(phase, fingers, daemonPresent) {
+        if (phase === 'begin')
+            this._swallowing = fingers === DRAG_FINGERS && daemonPresent === true;
+        const swallow = this._swallowing;
+        if (phase === 'end')
+            this._swallowing = false;
+        return swallow;
+    }
+}

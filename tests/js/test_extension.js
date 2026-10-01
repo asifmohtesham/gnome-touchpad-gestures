@@ -3,7 +3,8 @@
 import System from 'system';
 
 import {
-    BASE_DISTANCE, WATCHDOG_MS, WorkspaceSwipe, isOverWindow,
+    BASE_DISTANCE, DRAG_FINGERS, SwipeFilter, WATCHDOG_MS, WorkspaceSwipe,
+    isOverWindow,
 } from '../../extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io/gestures.js';
 
 let run = 0;
@@ -413,6 +414,91 @@ test('an endless chain of parents does not hang the shell', () => {
     const loop = {name: 'loop'};
     loop.get_parent = () => loop;
     same(isOverWindow(loop, groups, false, stage), false);
+});
+
+// Which swipes the shell is kept from seeing, where the daemon drags.
+
+function whole(filter, fingers, daemonPresent) {
+    return ['begin', 'update', 'update', 'end'].map(
+        phase => filter.handle(phase, fingers, daemonPresent));
+}
+
+test('three fingers are the ones that drag', () => {
+    same(DRAG_FINGERS, 3);
+});
+
+test('a swipe of three fingers is swallowed whole while the daemon is there', () => {
+    same(whole(new SwipeFilter(), 3, true), [true, true, true, true]);
+});
+
+test('it is left alone while the daemon is not', () => {
+    same(whole(new SwipeFilter(), 3, false), [false, false, false, false]);
+});
+
+test('a swipe of four fingers, or two, or five, is never swallowed', () => {
+    for (const fingers of [2, 4, 5])
+        same(whole(new SwipeFilter(), fingers, true), [false, false, false, false]);
+});
+
+test('a daemon that goes in the middle of a swipe does not leave half of one', () => {
+    const filter = new SwipeFilter();
+    same(filter.handle('begin', 3, true), true);
+    same(filter.handle('update', 3, false), true);
+    same(filter.handle('end', 3, false), true);
+});
+
+test('a daemon that comes in the middle of a swipe does not cut it short', () => {
+    const filter = new SwipeFilter();
+    same(filter.handle('begin', 3, false), false);
+    same(filter.handle('update', 3, true), false);
+    same(filter.handle('end', 3, true), false);
+});
+
+test('each swipe is decided afresh at its begin', () => {
+    const filter = new SwipeFilter();
+    whole(filter, 3, true);
+    same(whole(filter, 4, true), [false, false, false, false]);
+    same(whole(filter, 3, true), [true, true, true, true]);
+    same(whole(filter, 3, false), [false, false, false, false]);
+});
+
+test('nothing is swallowed once a swipe has ended', () => {
+    const filter = new SwipeFilter();
+    whole(filter, 3, true);
+    same(filter.handle('update', 3, true), false);
+    same(filter.handle('end', 3, true), false);
+});
+
+test('a swipe whose begin was never seen is not swallowed', () => {
+    const filter = new SwipeFilter();
+    same(filter.handle('update', 3, true), false);
+    same(filter.handle('end', 3, true), false);
+});
+
+test('a begin on top of a swipe that never ended starts over', () => {
+    const filter = new SwipeFilter();
+    filter.handle('begin', 3, true);
+    same(filter.handle('begin', 4, true), false);
+    same(filter.handle('update', 4, true), false);
+});
+
+test('a phase the filter does not know changes nothing and is never a begin', () => {
+    const filter = new SwipeFilter();
+    same(filter.handle(undefined, 3, true), false);
+    same(filter.handle('begin', 3, true), true);
+    same(filter.handle(undefined, 3, true), true);
+    same(filter.handle('later', 3, true), true);
+    same(filter.handle('end', 3, true), true);
+});
+
+test('only a plain yes counts as the daemon being there', () => {
+    for (const present of [undefined, null, 1, 'yes'])
+        same(new SwipeFilter().handle('begin', 3, present), false);
+});
+
+test('a count of fingers that is not three in every way is not three', () => {
+    for (const fingers of ['3', 3.5, undefined, null, NaN])
+        same(new SwipeFilter().handle('begin', fingers, true), false);
 });
 
 print(`${run} tests, ${failed} failed`);
