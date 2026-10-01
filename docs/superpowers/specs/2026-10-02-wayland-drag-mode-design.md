@@ -120,7 +120,11 @@ after the daemon has it.
 ## The extension
 
 One extension, as now, with one more behaviour. Which one it takes is
-decided when it is enabled, by `Meta.is_wayland_compositor()`.
+decided when it is enabled, by `Meta.is_wayland_compositor()` where the
+shell has that call. GNOME 50 dropped it together with the X11 session, so
+a shell that cannot be asked is taken to run Wayland. (Found at the first
+real load, 2026-10-02: the extension failed on that call, which the test
+stand-in had offered and the real shell did not.)
 
 | | On X11 | On Wayland |
 |---|---|---|

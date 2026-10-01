@@ -20,6 +20,7 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 import {
     SwipeFilter, WorkspaceSwipe, freesThreeFingersOn, isOverWindow,
+    isWaylandShell,
 } from './gestures.js';
 
 const OBJECT_PATH = '/io/github/asifmohtesham/Gestures';
@@ -61,7 +62,7 @@ const PHASES = new Map([
 
 export default class GesturesExtension extends Extension {
     enable() {
-        this._wayland = Meta.is_wayland_compositor();
+        this._wayland = isWaylandShell(Meta);
         this._daemonPresent = false;
         if (!this._wayland)
             this._followSwipes();

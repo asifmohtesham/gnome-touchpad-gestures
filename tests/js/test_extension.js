@@ -4,7 +4,7 @@ import System from 'system';
 
 import {
     BASE_DISTANCE, DRAG_FINGERS, SwipeFilter, WATCHDOG_MS, WorkspaceSwipe,
-    freesThreeFingersOn, isOverWindow,
+    freesThreeFingersOn, isOverWindow, isWaylandShell,
 } from '../../extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io/gestures.js';
 
 let run = 0;
@@ -518,6 +518,19 @@ test('they are not freed on a shell it was never tried in', () => {
 test('a version that cannot be read frees nothing', () => {
     for (const version of ['', 'unknown', undefined, null, 50, {}])
         same(freesThreeFingersOn(version), false, String(version));
+});
+
+// Which kind of session the shell runs.
+
+test('a shell that can say which session it runs is taken at its word', () => {
+    same(isWaylandShell({is_wayland_compositor: () => true}), true);
+    same(isWaylandShell({is_wayland_compositor: () => false}), false);
+});
+
+test('a shell that can no longer be asked has no X11 session to run', () => {
+    // GNOME 50 dropped the X11 session and the call with it.
+    same(isWaylandShell({}), true);
+    same(isWaylandShell({is_wayland_compositor: undefined}), true);
 });
 
 print(`${run} tests, ${failed} failed`);

@@ -13,9 +13,10 @@ const directory = ARGV[0];
 const Main = await import(`file://${directory}/stand_in_main.js`);
 const {default: Clutter} = await import(`file://${directory}/stand_in_clutter.js`);
 const Meta = await import(`file://${directory}/stand_in_meta.js`);
-Meta.setWayland(ARGV[1] === 'wayland');
 const Config = await import(`file://${directory}/stand_in_config.js`);
 Config.setVersion(ARGV[2]);
+// Shells from 50 on have no X11 session and cannot be asked which they run.
+Meta.setSession(ARGV[1] === 'wayland', parseInt(ARGV[2]) < 50);
 
 // What is connected to the stage, so that events can be put through it.
 const handlers = new Map();

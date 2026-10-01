@@ -196,3 +196,13 @@ export function freesThreeFingersOn(version) {
     const major = /^(\d+)(\.|$)/.exec(version);
     return major !== null && WAYLAND_SHELLS.includes(Number(major[1]));
 }
+
+// Whether the shell runs a Wayland session. `meta` is the shell's Meta.
+// A shell that still has an X11 session can say. From GNOME 50 there is
+// none, and the call that said went with it: a shell that cannot be asked
+// runs Wayland.
+export function isWaylandShell(meta) {
+    if (typeof meta.is_wayland_compositor !== 'function')
+        return true;
+    return meta.is_wayland_compositor() === true;
+}
