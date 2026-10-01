@@ -2,11 +2,11 @@ import unittest
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures.gestures import (
+from gnome_touchpad_gestures.gestures import (
     SWIPE_FULL_MM, SWIPE_MM, ButtonDown, ButtonUp, Direction, Move, Overview,
     SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
-from gnome_x11_touchpad_gestures.momentum import Scroll
-from gnome_x11_touchpad_gestures.output import (
+from gnome_touchpad_gestures.momentum import Scroll
+from gnome_touchpad_gestures.output import (
     GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, DragOnly, NoDevice, Output)
 
 SYN = "syn"

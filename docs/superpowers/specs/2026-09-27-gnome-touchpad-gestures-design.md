@@ -1,4 +1,4 @@
-# gnome-x11-touchpad-gestures: macOS-style touchpad gestures for GNOME on X11
+# gnome-touchpad-gestures: macOS-style touchpad gestures for GNOME on X11
 
 Date: 2026-09-27
 Status: implemented and in use. Written before the code and amended as it
@@ -61,7 +61,7 @@ Rejected alternatives:
 
 ```
 <repository>/          anywhere; the installer copies the program out of it
-  gnome_x11_touchpad_gestures/
+  gnome_touchpad_gestures/
     __init__.py
     gestures.py        drag and four-finger swipes; pure, no device access
     momentum.py        glide after a two-finger flick; pure
@@ -72,8 +72,8 @@ Rejected alternatives:
     daemon.py          device discovery, event loop, shutdown
   tests/               stdlib unittest, one file per module
   install/
-    71-gnome-x11-touchpad-gestures.rules
-    gnome-x11-touchpad-gestures.service
+    71-gnome-touchpad-gestures.rules
+    gnome-touchpad-gestures.service
     install.sh
     uninstall.sh
   README.md
@@ -254,9 +254,9 @@ pointer the touchpad's speed. A test now keeps those words out of the names.
 
 | Device | Capabilities |
 |---|---|
-| `gnome-x11-gestures pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
-| `gnome-x11-gestures keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
-| `gnome-x11-gestures wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
+| `gnome-gestures pointer` | `REL_X`, `REL_Y`, `BTN_LEFT` |
+| `gnome-gestures keyboard` | `KEY_LEFTCTRL`, `KEY_LEFTALT`, `KEY_LEFT`, `KEY_RIGHT` |
+| `gnome-gestures wheel` | high-resolution and notch wheel axes, both directions; see the momentum section |
 
 | Action | Events |
 |---|---|
@@ -352,7 +352,7 @@ never inherits part of an old one.
 Not solvable here: a glide cannot know that the page has reached its end,
 so an app's end-of-page effect may last until the glide is over.
 
-Output goes to a third virtual device, `gnome-x11-gestures wheel`, as
+Output goes to a third virtual device, `gnome-gestures wheel`, as
 `REL_WHEEL_HI_RES` and `REL_HWHEEL_HI_RES`, with a `REL_WHEEL` or
 `REL_HWHEEL` notch for every 120 units for programs that predate
 high-resolution scrolling. The device also declares motion axes and buttons
@@ -445,7 +445,7 @@ it does not break a run of flicks.
 
 ## Permissions
 
-`install/71-gnome-x11-touchpad-gestures.rules`:
+`install/71-gnome-touchpad-gestures.rules`:
 
 ```
 ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_TOUCHPAD}=="1", ENV{ID_INPUT_KEYBOARD}!="1", TAG+="uaccess"
@@ -466,7 +466,7 @@ adds no meaningful exposure in the current session.
 
 ## Service
 
-`install/gnome-x11-touchpad-gestures.service`, installed to `~/.config/systemd/user/`:
+`install/gnome-touchpad-gestures.service`, installed to `~/.config/systemd/user/`:
 
 ```ini
 [Unit]
@@ -476,9 +476,9 @@ ConditionEnvironment=XDG_SESSION_TYPE=x11
 After=graphical-session.target
 
 [Service]
-ExecStart=/usr/bin/python3 -m gnome_x11_touchpad_gestures.daemon
-WorkingDirectory=%h/.local/share/gnome-x11-touchpad-gestures
-Environment=PYTHONPATH=%h/.local/share/gnome-x11-touchpad-gestures
+ExecStart=/usr/bin/python3 -m gnome_touchpad_gestures.daemon
+WorkingDirectory=%h/.local/share/gnome-touchpad-gestures
+Environment=PYTHONPATH=%h/.local/share/gnome-touchpad-gestures
 Restart=on-failure
 RestartSec=2
 
@@ -496,7 +496,7 @@ WantedBy=graphical-session.target
 3. Verify the current user can open both devices. If the check reports
    missing access (status 3), say that logging out and back in is required
    and stop. If it fails any other way, say so and do not suggest a re-login.
-4. Copy the program to `~/.local/share/gnome-x11-touchpad-gestures` and the unit to
+4. Copy the program to `~/.local/share/gnome-touchpad-gestures` and the unit to
    `~/.config/systemd/user/`, then reload, enable and start the service.
 
 Steps 1 and 2 are skipped, and no password is asked for, when the installed
@@ -506,7 +506,7 @@ passes. That is the normal case when reinstalling after a change to the code.
 #### Where the program runs from
 
 The service runs an installed copy, named in the unit as
-`%h/.local/share/gnome-x11-touchpad-gestures`. `%h` is the home directory, expanded by
+`%h/.local/share/gnome-touchpad-gestures`. `%h` is the home directory, expanded by
 systemd itself. No path chosen by the user is written into any installed
 file, so the repository may be anywhere and may be moved or removed.
 
@@ -592,7 +592,7 @@ Run with `python3 -m unittest discover -s tests`.
 - Two-finger scroll and one-finger pointing are unchanged.
 - Four-finger swipe left and right switches workspace, once per swipe.
 - Suspend and resume; gestures work again within a few seconds.
-- `systemctl --user stop gnome-x11-touchpad-gestures` mid-drag releases the button.
+- `systemctl --user stop gnome-touchpad-gestures` mid-drag releases the button.
 
 ## Known behaviour
 
@@ -633,7 +633,7 @@ proxy object. A proxy first asks the shell to describe itself, with a wait of
 up to 25 seconds that the timeout does not cover, and stays bound to the
 shell it met, so it misses a shell that was restarted.
 
-`gnome_x11_touchpad_gestures/shell.py` holds that one call. It connects on first use, passes
+`gnome_touchpad_gestures/shell.py` holds that one call. It connects on first use, passes
 a timeout of `OVERVIEW_TIMEOUT_S` (0.5 s) because the call runs on the
 daemon's only thread, and treats every failure the same way: log it and
 carry on. The overview is a convenience and must never take the drag
@@ -653,7 +653,7 @@ gradually, since the only thing a key press can say is "switch". And
 knowing what the pointer is over, since the dock on this machine hides
 itself and reserves no part of the screen that could be compared with the
 pointer's position. Both are done by a small extension,
-`gnome-x11-touchpad-gestures@asifmohtesham.github.io`.
+`gnome-touchpad-gestures@asifmohtesham.github.io`.
 
 It exports one object on the shell's session bus connection, at
 `/io/github/asifmohtesham/Gestures`:

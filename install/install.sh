@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Installs gnome-x11-touchpad-gestures. Safe to run repeatedly.
+# Installs gnome-touchpad-gestures. Safe to run repeatedly.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(dirname "$here")"
-rule="71-gnome-x11-touchpad-gestures.rules"
-unit="gnome-x11-touchpad-gestures.service"
+rule="71-gnome-touchpad-gestures.rules"
+unit="gnome-touchpad-gestures.service"
 unit_dir="$HOME/.config/systemd/user"
 rules_dir="/etc/udev/rules.d"
 # Where the program is installed. The unit names the same place as
-# %h/.local/share/gnome-x11-touchpad-gestures, so the two must change together.
-program_dir="$HOME/.local/share/gnome-x11-touchpad-gestures"
+# %h/.local/share/gnome-touchpad-gestures, so the two must change together.
+program_dir="$HOME/.local/share/gnome-touchpad-gestures"
 # The part that runs inside GNOME Shell. On X11 the gestures work without
 # it, but workspaces snap across and glides are held back only in the
 # overview. On Wayland there is no drag without it.
-extension="gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+extension="gnome-touchpad-gestures@asifmohtesham.github.io"
 extensions_dir="$HOME/.local/share/gnome-shell/extensions"
 # What this project installed when it was called finger-drag. Left in place,
 # the old service would run beside the new one and every gesture would
@@ -24,7 +24,7 @@ former="finger-drag"
 former_unit="$unit_dir/$former.service"
 former_program="$HOME/.local/share/$former"
 former_rule="71-$former.rules"
-# Exit status of `gnome_x11_touchpad_gestures.daemon --check` when device access is missing.
+# Exit status of `gnome_touchpad_gestures.daemon --check` when device access is missing.
 no_access=3
 # ... and when the touchpad cannot tell fingers apart.
 unsupported=4
@@ -71,7 +71,7 @@ refuse_root() {
 }
 
 check_access() {
-    (cd "$repo" && python3 -m gnome_x11_touchpad_gestures.daemon --check)
+    (cd "$repo" && python3 -m gnome_touchpad_gestures.daemon --check)
 }
 
 # Whether the privileged step has anything left to do. A check that fails
@@ -111,7 +111,7 @@ put_in_place() {
 }
 
 install_program() {
-    local package="gnome_x11_touchpad_gestures"
+    local package="gnome_touchpad_gestures"
     put_in_place "$program_dir/$package" "$program_dir/$package" \
         "$repo/$package"/*.py
 }
@@ -166,14 +166,14 @@ extension_is_installed_from() {
 # loaded none or cannot be asked. Asked by the daemon's own client.
 loaded_extension_version() {
     (cd "$repo" && python3 -c '
-from gnome_x11_touchpad_gestures.shell import Shell
+from gnome_touchpad_gestures.shell import Shell
 print(Shell().extension_version() or "")') 2>/dev/null || true
 }
 
 this_version() {
     (cd "$repo" && python3 -c '
-import gnome_x11_touchpad_gestures
-print(gnome_x11_touchpad_gestures.__version__)')
+import gnome_touchpad_gestures
+print(gnome_touchpad_gestures.__version__)')
 }
 
 # Says whether the shell has to be made to load the extension. It loads it

@@ -1,4 +1,4 @@
-# gnome-x11-touchpad-gestures
+# gnome-touchpad-gestures
 #
 # Lets the user at the active seat read the touchpad and create virtual
 # input devices. Must sort before 73-seat-late.rules.

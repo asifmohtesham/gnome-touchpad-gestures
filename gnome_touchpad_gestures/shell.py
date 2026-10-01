@@ -22,7 +22,7 @@ SHELL_RETRY_S = 5.0
 # The extension, which runs inside the shell and answers on its connection.
 # What it offers is written out in its extension.js; a test holds the two
 # descriptions to each other.
-EXTENSION_UUID = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+EXTENSION_UUID = "gnome-touchpad-gestures@asifmohtesham.github.io"
 EXTENSION_PATH = "/io/github/asifmohtesham/Gestures"
 EXTENSION_INTERFACE = "io.github.asifmohtesham.Gestures"
 EXTENSION_CALLS = {
@@ -51,7 +51,7 @@ DRAG_COMPLAINT = (
 # swipes off them, and the daemon does not drag. And the question is put
 # once for each drag, not several times in the course of a glide.
 DRAG_RETRY_S = 1.0
-PREFIX = "gnome-x11-touchpad-gestures: "
+PREFIX = "gnome-touchpad-gestures: "
 # What the bus calls a question that was given no answer in time.
 UNANSWERED = (
     "org.freedesktop.DBus.Error.NoReply",

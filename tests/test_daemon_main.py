@@ -11,9 +11,9 @@ from unittest import mock
 
 from evdev import ecodes as e
 
-from gnome_x11_touchpad_gestures import daemon, shell
-from gnome_x11_touchpad_gestures.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
-from gnome_x11_touchpad_gestures.output import WORKSPACE_KEYS
+from gnome_touchpad_gestures import daemon, shell
+from gnome_touchpad_gestures.gestures import DRAG_RELEASE_S, DRAG_SETTLE_S
+from gnome_touchpad_gestures.output import WORKSPACE_KEYS
 
 POINTER = daemon.POINTER_NAME
 KEYBOARD = daemon.KEYBOARD_NAME
@@ -269,9 +269,9 @@ class MainTest(unittest.TestCase):
         return {name for name, device in self.devices.items() if device.closed}
 
     def test_startup_line_names_the_version(self):
-        import gnome_x11_touchpad_gestures
+        import gnome_touchpad_gestures
         self.run_main(FakeTouchpad([interrupt]))
-        self.assertIn(gnome_x11_touchpad_gestures.__version__, self.said)
+        self.assertIn(gnome_touchpad_gestures.__version__, self.said)
 
     def times_given_to_the_loop(self, kernel_agrees):
         touchpad = FakeTouchpad([interrupt])

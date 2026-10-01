@@ -5,7 +5,7 @@ import System from 'system';
 import {
     BASE_DISTANCE, DRAG_FINGERS, SwipeFilter, WATCHDOG_MS, WorkspaceSwipe,
     freesThreeFingersOn, isOverWindow, isWaylandShell,
-} from '../../extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io/gestures.js';
+} from '../../extension/gnome-touchpad-gestures@asifmohtesham.github.io/gestures.js';
 
 let run = 0;
 let failed = 0;

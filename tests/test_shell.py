@@ -4,7 +4,7 @@ import unittest
 
 import dbus
 
-from gnome_x11_touchpad_gestures.shell import (
+from gnome_touchpad_gestures.shell import (
     DAEMON_NAME, DRAG_COMPLAINT, DRAG_RETRY_S, EXTENSION_INTERFACE, EXTENSION_PATH,
     OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
 

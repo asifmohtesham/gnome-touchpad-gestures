@@ -7,11 +7,11 @@ import subprocess
 import unittest
 import xml.etree.ElementTree as ElementTree
 
-import gnome_x11_touchpad_gestures
-from gnome_x11_touchpad_gestures import shell
+import gnome_touchpad_gestures
+from gnome_touchpad_gestures import shell
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-UUID = "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+UUID = "gnome-touchpad-gestures@asifmohtesham.github.io"
 EXTENSION = REPO / "extension" / UUID
 GJS = shutil.which("gjs")
 
@@ -72,7 +72,7 @@ class MetadataTest(unittest.TestCase):
 
     def test_version_is_the_project_s(self):
         self.assertEqual(self.metadata["version-name"],
-                         gnome_x11_touchpad_gestures.__version__)
+                         gnome_touchpad_gestures.__version__)
 
     def test_shell_versions_are_named(self):
         versions = self.metadata["shell-version"]

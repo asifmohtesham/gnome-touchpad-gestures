@@ -17,7 +17,7 @@
 - Mode: `XDG_SESSION_TYPE == "wayland"` is drag mode; anything else, including unset, is full mode.
 - Bus name: `io.github.asifmohtesham.Gestures.Daemon`.
 - Extension `shell-version`: `["46", "50"]`, nothing between.
-- Target version: `0.3.0`, written in `gnome_x11_touchpad_gestures/__init__.py`, the extension's `metadata.json` and `CHANGELOG.md`.
+- Target version: `0.3.0`, written in `gnome_touchpad_gestures/__init__.py`, the extension's `metadata.json` and `CHANGELOG.md`.
 - The README names no three-number version of anything (a test enforces it): write "libinput 1.31", "Ubuntu 26.04".
 - Run the suite from the repository root: `python3 -W ignore -m unittest discover -s tests` and `gjs -m tests/js/test_extension.js`.
 - Tests must not depend on the session they run in. This machine is on Wayland now; a test that needs a mode sets `XDG_SESSION_TYPE` itself.
@@ -46,9 +46,9 @@ Conditions the spec implies but does not spell out as tests, most likely first. 
 
 | File | Change | Responsibility |
 |---|---|---|
-| `gnome_x11_touchpad_gestures/shell.py` | modify | `DAEMON_NAME`, `announce()`, `three_fingers_free()`, the complaint per mode |
-| `gnome_x11_touchpad_gestures/output.py` | modify | `NoDevice`, `DragOnly` |
-| `gnome_x11_touchpad_gestures/daemon.py` | modify | `session_mode()`, `main` per mode, `--check` per mode |
+| `gnome_touchpad_gestures/shell.py` | modify | `DAEMON_NAME`, `announce()`, `three_fingers_free()`, the complaint per mode |
+| `gnome_touchpad_gestures/output.py` | modify | `NoDevice`, `DragOnly` |
+| `gnome_touchpad_gestures/daemon.py` | modify | `session_mode()`, `main` per mode, `--check` per mode |
 | `extension/.../gestures.js` | modify | `SwipeFilter`, pure |
 | `extension/.../extension.js` | modify | Wayland behaviour, `ThreeFingersFree` |
 | `extension/.../metadata.json` | modify | shell versions, name, description, version |
@@ -56,18 +56,18 @@ Conditions the spec implies but does not spell out as tests, most likely first. 
 | `tests/js/stand_ins/clutter.js` | modify | swipe event names |
 | `tests/js/run_extension.js` | modify | a stage that events can be put through, a mode |
 | `tests/helpers/drive_extension.py` | modify | drives the Wayland behaviour too |
-| `install/gnome-x11-touchpad-gestures.service` | modify | starts in both sessions |
+| `install/gnome-touchpad-gestures.service` | modify | starts in both sessions |
 | `install/install.sh` | modify | advice per session |
 | `README.md`, `CHANGELOG.md`, first spec | modify | both modes |
 
-`EXT` below stands for `extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io`.
+`EXT` below stands for `extension/gnome-touchpad-gestures@asifmohtesham.github.io`.
 
 ---
 
 ### Task 1: The daemon's name, and the question it asks
 
 **Files:**
-- Modify: `gnome_x11_touchpad_gestures/shell.py`
+- Modify: `gnome_touchpad_gestures/shell.py`
 - Modify: `EXT/extension.js` (declare the method only)
 - Test: `tests/test_shell.py`
 
@@ -80,7 +80,7 @@ Conditions the spec implies but does not spell out as tests, most likely first. 
 In `tests/test_shell.py`, extend the import and `FakeBus`:
 
 ```python
-from gnome_x11_touchpad_gestures.shell import (
+from gnome_touchpad_gestures.shell import (
     DAEMON_NAME, DRAG_COMPLAINT, EXTENSION_INTERFACE, EXTENSION_PATH,
     OVERVIEW_TIMEOUT_S, SHELL_RETRY_S, Shell)
 ```
@@ -228,7 +228,7 @@ Expected: an `ImportError` naming `DAEMON_NAME`.
 
 - [ ] **Step 3: Write the client's side**
 
-In `gnome_x11_touchpad_gestures/shell.py`, add `import dbus.bus` under `import dbus`, add `"ThreeFingersFree": "",` to `EXTENSION_CALLS`, and add after `EXTENSION_CALLS`:
+In `gnome_touchpad_gestures/shell.py`, add `import dbus.bus` under `import dbus`, add `"ThreeFingersFree": "",` to `EXTENSION_CALLS`, and add after `EXTENSION_CALLS`:
 
 ```python
 # The name the daemon takes on the session bus where it only drags. The
@@ -324,7 +324,7 @@ Message: `Give the daemon a name on the bus, and a question for the extension`.
 ### Task 2: Carrying out the drag and nothing else
 
 **Files:**
-- Modify: `gnome_x11_touchpad_gestures/output.py`
+- Modify: `gnome_touchpad_gestures/output.py`
 - Test: `tests/test_output.py`
 
 **Interfaces:**
@@ -336,7 +336,7 @@ Message: `Give the daemon a name on the bus, and a question for the extension`.
 In `tests/test_output.py`, change the import of the output module to:
 
 ```python
-from gnome_x11_touchpad_gestures.output import (
+from gnome_touchpad_gestures.output import (
     GLIDE_CHECK_STEPS, KEY_HOLD_S, WORKSPACE_KEYS, DragOnly, NoDevice, Output)
 ```
 
@@ -454,7 +454,7 @@ Expected: an `ImportError` naming `DragOnly`.
 
 - [ ] **Step 3: Write `NoDevice` and `DragOnly`**
 
-Append to `gnome_x11_touchpad_gestures/output.py`:
+Append to `gnome_touchpad_gestures/output.py`:
 
 ```python
 class NoDevice:
@@ -513,7 +513,7 @@ Message: `Carry out the drag alone where the desktop does the rest`.
 ### Task 3: The daemon picks its mode
 
 **Files:**
-- Modify: `gnome_x11_touchpad_gestures/daemon.py`
+- Modify: `gnome_touchpad_gestures/daemon.py`
 - Test: `tests/test_daemon.py`, `tests/test_daemon_main.py`
 
 **Interfaces:**
@@ -583,9 +583,9 @@ Replace `test_startup_line_names_the_version` with:
 
 ```python
     def test_startup_line_names_the_version(self):
-        import gnome_x11_touchpad_gestures
+        import gnome_touchpad_gestures
         self.run_main(FakeTouchpad([interrupt]))
-        self.assertIn(gnome_x11_touchpad_gestures.__version__, self.said)
+        self.assertIn(gnome_touchpad_gestures.__version__, self.said)
 ```
 
 In `tests/test_daemon.py`, change `checked` to:
@@ -660,7 +660,7 @@ class SessionModeTest(unittest.TestCase):
             self.assertEqual(daemon.session_mode(), "full")
 ```
 
-In `tests/test_daemon_main.py`, add to `MainTest` (and `from gnome_x11_touchpad_gestures import shell` to the imports):
+In `tests/test_daemon_main.py`, add to `MainTest` (and `from gnome_touchpad_gestures import shell` to the imports):
 
 ```python
     def test_drag_mode_makes_the_pointer_and_no_other_device(self):
@@ -733,14 +733,14 @@ Expected: the new tests fail or error; `AttributeError: ... has no attribute 'se
 
 - [ ] **Step 4: Write the daemon's side**
 
-In `gnome_x11_touchpad_gestures/daemon.py`:
+In `gnome_touchpad_gestures/daemon.py`:
 
 Change the two imports:
 
 ```python
-from gnome_x11_touchpad_gestures.output import (
+from gnome_touchpad_gestures.output import (
     WORKSPACE_KEYS, DragOnly, NoDevice, Output)
-from gnome_x11_touchpad_gestures.shell import (
+from gnome_touchpad_gestures.shell import (
     DRAG_COMPLAINT, OVERVIEW_TIMEOUT_S, Shell)
 ```
 
@@ -843,7 +843,7 @@ In `main`, replace everything from `pointer = create(` down to and including the
             machine = Machines(GestureMachine(), glides(shell))
         # A crash must never leave a drag or a modifier stuck.
         cleanup.callback(output.release_all)
-        print(f"gnome-x11-touchpad-gestures {__version__}: "
+        print(f"gnome-touchpad-gestures {__version__}: "
               f"{MODE_SAYS[mode]}, "
               f"listening on {device.path} ({device.name})", flush=True)
 ```
@@ -886,7 +886,7 @@ In `tests/js/test_extension.js`, change the import to:
 import {
     BASE_DISTANCE, DRAG_FINGERS, SwipeFilter, WATCHDOG_MS, WorkspaceSwipe,
     isOverWindow,
-} from '../../extension/gnome-x11-touchpad-gestures@asifmohtesham.github.io/gestures.js';
+} from '../../extension/gnome-touchpad-gestures@asifmohtesham.github.io/gestures.js';
 ```
 
 and add before the final `print(` line:
@@ -1193,7 +1193,7 @@ import dbus
 REPO = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO))
 
-from gnome_x11_touchpad_gestures.shell import (  # noqa: E402
+from gnome_touchpad_gestures.shell import (  # noqa: E402
     DAEMON_NAME, EXTENSION_INTERFACE, EXTENSION_PATH, Shell)
 
 
@@ -1365,7 +1365,7 @@ Replace `ExtensionRunsTest.setUpClass` and `setUp` with a helper and a base clas
 ```python
 def run_extension(mode):
     """Runs the extension in a session of the kind named. What happened, or why not."""
-    with tempfile.TemporaryDirectory(prefix="gnome-x11-touchpad-gestures-test-") as directory:
+    with tempfile.TemporaryDirectory(prefix="gnome-touchpad-gestures-test-") as directory:
         copy_with_stand_ins(directory)
         environment = {key: value for key, value in os.environ.items()
                        if key not in ("DBUS_SESSION_BUS_ADDRESS", "DISPLAY")}
@@ -1421,7 +1421,7 @@ class OnWaylandTest(Ran):
         self.assertEqual(self.seen["runner complaints"], "")
 
     def test_it_tells_its_version(self):
-        self.assertEqual(self.seen["version"], gnome_x11_touchpad_gestures.__version__)
+        self.assertEqual(self.seen["version"], gnome_touchpad_gestures.__version__)
 
     def test_it_listens_on_the_stage_once(self):
         self.assertEqual(self.seen["handlers"], 1)
@@ -1479,7 +1479,7 @@ class OnWaylandTest(Ran):
 
     def test_switched_on_again_it_finds_the_daemon_still_there(self):
         self.assertEqual(self.seen["version once on again"],
-                         gnome_x11_touchpad_gestures.__version__)
+                         gnome_touchpad_gestures.__version__)
         self.assertEqual(self.seen["handlers once on again"], 1)
         self.assertIs(self.seen["free once on again"], True)
         self.assertEqual(self.seen["swipe once on again"], self.WHOLE)
@@ -1514,7 +1514,7 @@ In `EXT/metadata.json` set:
 
 ```json
     "name": "Touchpad gestures",
-    "description": "Works with the gnome-x11-touchpad-gestures daemon and does nothing without it. On X11 it moves workspaces under your fingers and tells the daemon whether the pointer is over a window. On Wayland it keeps the shell's own swipes off three fingers while the daemon is running, so that three fingers can drag.",
+    "description": "Works with the gnome-touchpad-gestures daemon and does nothing without it. On X11 it moves workspaces under your fingers and tells the daemon whether the pointer is over a window. On Wayland it keeps the shell's own swipes off three fingers while the daemon is running, so that three fingers can drag.",
     "shell-version": ["46", "50"]
 ```
 
@@ -1523,7 +1523,7 @@ In `EXT/extension.js`:
 Change the top comment and imports to:
 
 ```js
-// Works with the gnome-x11-touchpad-gestures daemon. On X11 it answers the
+// Works with the gnome-touchpad-gestures daemon. On X11 it answers the
 // daemon over D-Bus; on Wayland it keeps the shell's own swipes off three
 // fingers while the daemon is there. Everything that can be worked out
 // without the shell is in gestures.js; this file only hands it the pieces
@@ -1688,7 +1688,7 @@ Message: `Keep the shell's swipes off three fingers while the daemon is there`.
 ### Task 6: A service for both sessions, and advice that fits each
 
 **Files:**
-- Modify: `install/gnome-x11-touchpad-gestures.service`, `install/install.sh`
+- Modify: `install/gnome-touchpad-gestures.service`, `install/install.sh`
 - Test: `tests/test_install.py`
 
 **Interfaces:**
@@ -1701,7 +1701,7 @@ In `tests/test_install.py`, replace `test_service_runs_in_an_x11_session_only` w
 
 ```python
     def test_service_starts_in_an_x11_or_a_wayland_session_and_no_other(self):
-        unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
+        unit = (INSTALL / "gnome-touchpad-gestures.service").read_text()
         conditions = [line for line in unit.splitlines()
                       if line.startswith("ConditionEnvironment=")]
         # The bar makes each a condition of which one is enough.
@@ -1710,7 +1710,7 @@ In `tests/test_install.py`, replace `test_service_runs_in_an_x11_session_only` w
             "ConditionEnvironment=|XDG_SESSION_TYPE=wayland"])
 
     def test_service_does_not_promise_what_one_mode_lacks(self):
-        unit = (INSTALL / "gnome-x11-touchpad-gestures.service").read_text()
+        unit = (INSTALL / "gnome-touchpad-gestures.service").read_text()
         (description,) = [line for line in unit.splitlines()
                           if line.startswith("Description=")]
         self.assertIn("three-finger drag", description)
@@ -1798,7 +1798,7 @@ Expected: the new tests fail; no older test fails.
 
 - [ ] **Step 3: Change the unit**
 
-In `install/gnome-x11-touchpad-gestures.service`, replace the `Description=` line and the comment and condition under `PartOf=` with:
+In `install/gnome-touchpad-gestures.service`, replace the `Description=` line and the comment and condition under `PartOf=` with:
 
 ```ini
 Description=Touchpad gestures: three-finger drag, and on X11 the gestures GNOME lacks there
@@ -1812,7 +1812,7 @@ ConditionEnvironment=|XDG_SESSION_TYPE=wayland
 
 Check that systemd reads it as meant:
 
-Run: `systemd-analyze --user verify install/gnome-x11-touchpad-gestures.service; systemd-analyze --user condition 'ConditionEnvironment=|XDG_SESSION_TYPE=x11' 'ConditionEnvironment=|XDG_SESSION_TYPE=wayland'; echo "exit=$?"`
+Run: `systemd-analyze --user verify install/gnome-touchpad-gestures.service; systemd-analyze --user condition 'ConditionEnvironment=|XDG_SESSION_TYPE=x11' 'ConditionEnvironment=|XDG_SESSION_TYPE=wayland'; echo "exit=$?"`
 Expected: no complaint about the conditions, and on this Wayland session `exit=0` with "Conditions succeeded". (`verify` may complain that the program directory is missing in a clean checkout; that is not about the conditions.)
 
 - [ ] **Step 4: Change the installer**
@@ -1921,13 +1921,13 @@ Message: `Start the service on Wayland too, and advise logging out there`.
 ### Task 7: Version 0.3.0 and the documents
 
 **Files:**
-- Modify: `gnome_x11_touchpad_gestures/__init__.py`, `EXT/metadata.json`, `CHANGELOG.md`, `README.md`, `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
+- Modify: `gnome_touchpad_gestures/__init__.py`, `EXT/metadata.json`, `CHANGELOG.md`, `README.md`, `docs/superpowers/specs/2026-09-27-gnome-touchpad-gestures-design.md`
 
 **Interfaces:** none.
 
 - [ ] **Step 1: The version**
 
-Set `__version__ = "0.3.0"` in `gnome_x11_touchpad_gestures/__init__.py` and `"version-name": "0.3.0"` in `EXT/metadata.json`.
+Set `__version__ = "0.3.0"` in `gnome_touchpad_gestures/__init__.py` and `"version-name": "0.3.0"` in `EXT/metadata.json`.
 
 In `CHANGELOG.md`, add above `## 0.2.1`:
 
@@ -1991,7 +1991,7 @@ Wayland:
 | Any touch during a glide | The glide stops at once |
 | Flick over the dock, the top bar, a menu or the overview | No glide. A wheel steps through things there |
 
-Design: `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`
+Design: `docs/superpowers/specs/2026-09-27-gnome-touchpad-gestures-design.md`
 for the X11 mode, `docs/superpowers/specs/2026-10-02-wayland-drag-mode-design.md`
 for the Wayland one.
 ```
@@ -2057,13 +2057,13 @@ fingers while the daemon runs. Stop the daemon and three do them again, at
 once and without logging out:
 
 ```bash
-systemctl --user stop gnome-x11-touchpad-gestures
+systemctl --user stop gnome-touchpad-gestures
 ```
 
 The extension never presses a button or moves the pointer. If it should
 misbehave, the worst it can do is swallow three-finger swipes, and either
 the command above or
-`gnome-extensions disable gnome-x11-touchpad-gestures@asifmohtesham.github.io`
+`gnome-extensions disable gnome-touchpad-gestures@asifmohtesham.github.io`
 puts them back.
 ```
 
@@ -2080,7 +2080,7 @@ On Wayland, after logging out and in:
 - [ ] Lift and re-place fingers mid-drag; the drag continues.
 - [ ] Three-finger tap still pastes (middle click).
 - [ ] A four-finger swipe switches workspace and opens the overview.
-- [ ] `systemctl --user stop gnome-x11-touchpad-gestures`: a three-finger
+- [ ] `systemctl --user stop gnome-touchpad-gestures`: a three-finger
       swipe is GNOME's again. Start it: the drag is back.
 - [ ] `gnome-extensions disable` with the service running: no drag, and a
       three-finger swipe is GNOME's.
@@ -2102,7 +2102,7 @@ In `## Known behaviour`, add at the top:
 
 - [ ] **Step 3: Point the first spec at the second**
 
-In `docs/superpowers/specs/2026-09-27-gnome-x11-touchpad-gestures-design.md`, add before `## Out of scope`:
+In `docs/superpowers/specs/2026-09-27-gnome-touchpad-gestures-design.md`, add before `## Out of scope`:
 
 ```markdown
 ## A second mode, for Wayland (added 2026-10-02, version 0.3.0)
@@ -2116,8 +2116,8 @@ below means the gestures of this document, which GNOME has itself there.
 
 - [ ] **Step 4: Run everything**
 
-Run: `python3 -W ignore -m unittest discover -s tests 2>&1 | tail -3 && gjs -m tests/js/test_extension.js | tail -1 && python3 -m gnome_x11_touchpad_gestures.daemon --version`
-Expected: `OK`, `48 tests, 0 failed`, `gnome-x11-touchpad-gestures 0.3.0`.
+Run: `python3 -W ignore -m unittest discover -s tests 2>&1 | tail -3 && gjs -m tests/js/test_extension.js | tail -1 && python3 -m gnome_touchpad_gestures.daemon --version`
+Expected: `OK`, `48 tests, 0 failed`, `gnome-touchpad-gestures 0.3.0`.
 
 - [ ] **Step 5: Commit**
 
@@ -2194,15 +2194,15 @@ Run: `bash -c 'source "$1"; if needs_sudo; then echo yes; else echo no; fi' bash
 Expected: `no`. If it says `yes`, stop and hand the install to the user.
 
 Run: `./install/install.sh`
-Expected at the end: `The shell still runs version 0.2.1 of the extension, and this is 0.3.0. Log out and log back in to load it.` or, if the shell has no extension loaded, `The shell has not loaded the extension. Log out and log back in to load it.` The service is `active`, and its log line reads `gnome-x11-touchpad-gestures 0.3.0: three-finger drag only, listening on ...`.
+Expected at the end: `The shell still runs version 0.2.1 of the extension, and this is 0.3.0. Log out and log back in to load it.` or, if the shell has no extension loaded, `The shell has not loaded the extension. Log out and log back in to load it.` The service is `active`, and its log line reads `gnome-touchpad-gestures 0.3.0: three-finger drag only, listening on ...`.
 
 Run: `busctl --user list | grep io.github.asifmohtesham.Gestures.Daemon`
 Expected: one line; the daemon holds its name.
 
-Until the user logs out and in, the extension is not loaded, the daemon is refused every drag, and three-finger swipes are GNOME's. That is the designed behaviour and is worth seeing: `journalctl --user -u gnome-x11-touchpad-gestures -n 5` shows the complaint `the shell extension is not answering, so three-finger drag is off` once, after the first three-finger movement.
+Until the user logs out and in, the extension is not loaded, the daemon is refused every drag, and three-finger swipes are GNOME's. That is the designed behaviour and is worth seeing: `journalctl --user -u gnome-touchpad-gestures -n 5` shows the complaint `the shell extension is not answering, so three-finger drag is off` once, after the first three-finger movement.
 
 - [ ] **Step 3: Hand over**
 
-Ask the user to log out and back in, then to go through the Wayland half of the README's manual checklist and to run `python3 -m gnome_x11_touchpad_gestures.daemon --check` from the repository. Report what `--check` should say: `session: wayland, so three-finger drag only` and `extension: answering, version 0.3.0`.
+Ask the user to log out and back in, then to go through the Wayland half of the README's manual checklist and to run `python3 -m gnome_touchpad_gestures.daemon --check` from the repository. Report what `--check` should say: `session: wayland, so three-finger drag only` and `extension: answering, version 0.3.0`.
 
 Do not merge, push, tag or release. Those wait for the user's word after the checklist.

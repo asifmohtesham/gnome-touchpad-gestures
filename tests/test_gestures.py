@@ -1,8 +1,8 @@
 import math
 import unittest
 
-from gnome_x11_touchpad_gestures import gestures as g
-from gnome_x11_touchpad_gestures.gestures import (
+from gnome_touchpad_gestures import gestures as g
+from gnome_touchpad_gestures.gestures import (
     ButtonDown, ButtonUp, Direction, GestureMachine, Move, Overview, Snap,
     State, SwipeBegin, SwipeCancel, SwipeEnd, SwipeMove, SwitchWorkspace)
 
@@ -264,7 +264,7 @@ class HeldSwipeTest(unittest.TestCase):
         import pathlib
         import re
         source = (pathlib.Path(__file__).resolve().parent.parent / "extension"
-                  / "gnome-x11-touchpad-gestures@asifmohtesham.github.io"
+                  / "gnome-touchpad-gestures@asifmohtesham.github.io"
                   / "gestures.js").read_text()
         waits_ms = int(re.search(r"export const WATCHDOG_MS = (\d+);", source).group(1))
         self.assertGreaterEqual(waits_ms / 1000, 3 * g.SWIPE_KEEPALIVE_S)

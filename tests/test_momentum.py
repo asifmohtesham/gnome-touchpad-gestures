@@ -1,7 +1,7 @@
 import unittest
 
-from gnome_x11_touchpad_gestures import momentum as m
-from gnome_x11_touchpad_gestures.momentum import MomentumMachine, Scroll
+from gnome_touchpad_gestures import momentum as m
+from gnome_touchpad_gestures.momentum import MomentumMachine, Scroll
 
 STEP = 0.007  # the touchpad reports about every 7 ms
 
