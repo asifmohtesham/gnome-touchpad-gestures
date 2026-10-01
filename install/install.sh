@@ -175,27 +175,40 @@ import gnome_x11_touchpad_gestures
 print(gnome_x11_touchpad_gestures.__version__)')
 }
 
-# Says whether the shell has to be restarted. It loads the extension when
-# it starts, and goes on running what it loaded whatever is installed after.
+# Says whether the shell has to be made to load the extension. It loads it
+# when it starts, and goes on running what it loaded whatever is installed
+# after. On X11 the shell can be restarted where it stands. On Wayland it
+# cannot, and what is needed is to log out.
 explain_extension() {
-    local loaded="$1" version="$2" changed="$3"
-    local restart="press Alt+F2, type r, press Enter. Your windows stay open."
+    local loaded="$1" version="$2" changed="$3" session="${4:-}"
+    local how="Restart the shell to load it:
+press Alt+F2, type r, press Enter. Your windows stay open."
+    local until="Until then workspaces snap across, and glides are held back only in
+the overview."
+    if [ "$session" = "wayland" ]; then
+        how="Log out and log back in to load it."
+        until="Until then there is no three-finger drag."
+    fi
     if [ -z "$loaded" ]; then
-        echo "The shell has not loaded the extension. Restart the shell to load it:"
-        echo "$restart"
-        echo "Until then workspaces snap across, and glides are held back only in"
-        echo "the overview."
+        echo "The shell has not loaded the extension. $how"
+        echo "$until"
     elif [ "$loaded" != "$version" ]; then
         echo "The shell still runs version $loaded of the extension, and this is"
-        echo "$version. Restart the shell to load it:"
-        echo "$restart"
+        echo "$version. $how"
     elif [ "$changed" = "yes" ]; then
         echo "The extension has changed, and the shell still runs it as it was."
-        echo "Restart the shell to load it:"
-        echo "$restart"
+        echo "$how"
     else
         echo "The shell has the extension loaded, version $loaded. No restart is needed."
     fi
+}
+
+# Whether the service starts in this kind of session.
+session_is_supported() {
+    case "${XDG_SESSION_TYPE:-}" in
+        x11|wayland) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 install_extension() {
@@ -250,9 +263,9 @@ main_as() {
         echo "Install with:  sudo apt install $missing" >&2
         exit 1
     fi
-    if [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
-        echo "Warning: this session is '${XDG_SESSION_TYPE:-unknown}', not x11." >&2
-        echo "The service only starts in an X11 session." >&2
+    if ! session_is_supported; then
+        echo "Warning: this session is '${XDG_SESSION_TYPE:-unknown}'." >&2
+        echo "The service only starts in an X11 or a Wayland session." >&2
     fi
 
     if needs_sudo; then
@@ -291,9 +304,9 @@ main_as() {
     # of the install.
     systemctl --user --no-pager --lines=5 status "$unit" || true
     echo
-    if [ "${XDG_SESSION_TYPE:-}" != "x11" ]; then
-        echo "This is not an X11 session, so the service has not started."
-        echo "It starts by itself at your next X11 login."
+    if ! session_is_supported; then
+        echo "This is not an X11 or Wayland session, so the service has not started."
+        echo "It starts by itself at your next login to one."
     fi
     echo "Installed to $program_dir."
     echo "The service runs that copy, so this directory can be moved or removed."
@@ -302,7 +315,7 @@ main_as() {
     # Asked now, not before: switching the extension on may be what made
     # the shell load it.
     explain_extension "$(loaded_extension_version)" "$(this_version)" \
-        "$extension_changed"
+        "$extension_changed" "${XDG_SESSION_TYPE:-}"
 }
 
 main() {
